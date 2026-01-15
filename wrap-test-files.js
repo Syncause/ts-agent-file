@@ -2,16 +2,20 @@
 /**
  * wrap-test-files.js - Auto-wrap test files for trace generation
  * 
- * This script:
- * 1. Copies test files to a new directory
- * 2. Transforms imports to wrap business functions with wrapUserFunction
- * 3. Works with any test framework (Jest, Mocha, Vitest, etc.)
+ * Universal version - works with any Node.js/TypeScript project
+ * 
+ * Features:
+ * - Auto-detects tsconfig.json path aliases
+ * - Wraps all relative imports (./xxx, ../xxx)
+ * - Wraps all alias imports (@/, ~/, #/)
+ * - Uses relative path for probe-wrapper-test import
  * 
  * Usage:
- *   node scripts/wrap-test-files.js <source-dir> <output-dir>
+ *   node wrap-test-files.js <source-dir> <output-dir> [probe-wrapper-path]
  * 
  * Example:
- *   node scripts/wrap-test-files.js __tests__ __tests_traced__
+ *   node wrap-test-files.js __tests__ __tests_traced__
+ *   node wrap-test-files.js test test_traced ../.syncause/probe-wrapper-test
  */
 
 const fs = require('fs');
@@ -21,38 +25,101 @@ const traverse = require('@babel/traverse').default;
 const generate = require('@babel/generator').default;
 const t = require('@babel/types');
 
-// Configuration: paths to wrap (relative imports from src)
-const WRAP_PATTERNS = [
-    /^@\//,           // @/ alias
-    /^\.\.?\/src\//,  // ../src/ or ./src/
-    /^\.\.?\/lib\//,  // ../lib/ or ./lib/
-    /^\.\.?\/utils\//, // ../utils/ or ./utils/
-];
+// Default probe-wrapper-test location (relative to output directory)
+let PROBE_WRAPPER_PATH = '../.syncause/probe-wrapper-test';
+
+// Detected path aliases from tsconfig.json
+let PATH_ALIASES = [];
 
 // Paths to exclude from wrapping
 const EXCLUDE_PATTERNS = [
+    /node_modules/,
     /instrumentation/,
     /probe-wrapper/,
     /\.test\./,
     /\.spec\./,
+    /\.d\.ts$/,
+    /__mocks__/,
+    /__fixtures__/,
 ];
 
-function shouldWrapImport(importPath) {
-    // Check if matches any wrap pattern
-    const matchesWrap = WRAP_PATTERNS.some(p => p.test(importPath));
-    if (!matchesWrap) return false;
+/**
+ * Read and parse tsconfig.json to detect path aliases
+ */
+function detectPathAliases() {
+    const tsconfigPaths = [
+        'tsconfig.json',
+        'tsconfig.base.json',
+        'jsconfig.json',
+    ];
 
-    // Check if matches any exclude pattern
-    const matchesExclude = EXCLUDE_PATTERNS.some(p => p.test(importPath));
-    return !matchesExclude;
+    for (const configFile of tsconfigPaths) {
+        if (fs.existsSync(configFile)) {
+            try {
+                const content = fs.readFileSync(configFile, 'utf8');
+                // Remove comments (simple approach)
+                const cleaned = content.replace(/\/\*[\s\S]*?\*\/|\/\/.*/g, '');
+                const config = JSON.parse(cleaned);
+
+                const paths = config?.compilerOptions?.paths || {};
+                PATH_ALIASES = Object.keys(paths).map(alias => {
+                    // Convert "@/*" to regex "^@/"
+                    const pattern = alias.replace('/*', '').replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+                    return new RegExp(`^${pattern}`);
+                });
+
+                if (PATH_ALIASES.length > 0) {
+                    console.log(`[INFO] Detected path aliases from ${configFile}: ${Object.keys(paths).join(', ')}`);
+                }
+                return;
+            } catch (err) {
+                console.warn(`[WARN] Failed to parse ${configFile}:`, err.message);
+            }
+        }
+    }
+
+    // Default aliases if no tsconfig found
+    PATH_ALIASES = [/^@\//, /^~\//, /^#\//];
+    console.log('[INFO] No tsconfig found, using default aliases: @/, ~/, #/');
 }
 
-function transformTestFile(code, filePath) {
+/**
+ * Check if an import path should be wrapped
+ */
+function shouldWrapImport(importPath) {
+    // Exclude node_modules and internal patterns
+    if (EXCLUDE_PATTERNS.some(p => p.test(importPath))) {
+        return false;
+    }
+
+    // Wrap all relative imports
+    if (importPath.startsWith('./') || importPath.startsWith('../')) {
+        return true;
+    }
+
+    // Wrap all path alias imports
+    if (PATH_ALIASES.some(p => p.test(importPath))) {
+        return true;
+    }
+
+    return false;
+}
+
+/**
+ * Calculate relative path from test file to probe-wrapper
+ */
+function getProbeWrapperImport(testFilePath, outputDir) {
+    const testDir = path.dirname(testFilePath);
+    const relativeToOutput = path.relative(path.join(outputDir, testDir), '.');
+    return path.join(relativeToOutput, '.syncause', 'probe-wrapper-test').replace(/\\/g, '/');
+}
+
+function transformTestFile(code, filePath, outputDir) {
     let ast;
     try {
         ast = parser.parse(code, {
             sourceType: 'module',
-            plugins: ['typescript', 'jsx'],
+            plugins: ['typescript', 'jsx', 'decorators-legacy'],
         });
     } catch (err) {
         console.warn(`[WARN] Failed to parse ${filePath}:`, err.message);
@@ -76,19 +143,27 @@ function transformTestFile(code, filePath) {
             if (shouldWrapImport(importSource)) {
                 const specifiers = nodePath.node.specifiers;
                 specifiers.forEach(spec => {
-                    if (spec.type === 'ImportSpecifier' || spec.type === 'ImportDefaultSpecifier') {
+                    if (spec.type === 'ImportSpecifier') {
                         const localName = spec.local.name;
-                        const importedName = spec.type === 'ImportSpecifier'
-                            ? (spec.imported.name || spec.imported.value)
-                            : 'default';
+                        const importedName = spec.imported.name || spec.imported.value;
 
                         importsToWrap.push({
                             localName,
                             importedName,
                             source: importSource,
-                            isDefault: spec.type === 'ImportDefaultSpecifier',
+                            isDefault: false,
+                        });
+                    } else if (spec.type === 'ImportDefaultSpecifier') {
+                        const localName = spec.local.name;
+
+                        importsToWrap.push({
+                            localName,
+                            importedName: 'default',
+                            source: importSource,
+                            isDefault: true,
                         });
                     }
+                    // Skip ImportNamespaceSpecifier (import * as xxx)
                 });
             }
         },
@@ -132,11 +207,14 @@ function transformTestFile(code, filePath) {
         ]);
     });
 
+    // Calculate relative path to probe-wrapper-test
+    const probeWrapperPath = getProbeWrapperImport(filePath, outputDir);
+
     // Add wrapUserFunction import if not present
     if (!hasWrapImport) {
         const wrapImport = t.importDeclaration(
             [t.importSpecifier(t.identifier('wrapUserFunction'), t.identifier('wrapUserFunction'))],
-            t.stringLiteral('@/probe-wrapper-test')
+            t.stringLiteral(probeWrapperPath)
         );
         ast.program.body.unshift(wrapImport);
     }
@@ -162,12 +240,12 @@ function transformTestFile(code, filePath) {
 }
 
 function processDirectory(sourceDir, outputDir) {
-    // Check if @babel/generator is installed
+    // Check dependencies
     try {
         require('@babel/generator');
     } catch {
         console.error('Missing dependency: @babel/generator');
-        console.log('Run: npm install -D @babel/generator');
+        console.log('Run: npm install -D @babel/parser @babel/traverse @babel/generator @babel/types');
         process.exit(1);
     }
 
@@ -176,6 +254,9 @@ function processDirectory(sourceDir, outputDir) {
         process.exit(1);
     }
 
+    // Detect path aliases
+    detectPathAliases();
+
     // Create output directory
     if (fs.existsSync(outputDir)) {
         fs.rmSync(outputDir, { recursive: true });
@@ -183,7 +264,27 @@ function processDirectory(sourceDir, outputDir) {
     fs.mkdirSync(outputDir, { recursive: true });
 
     // Process all test files
-    const files = fs.readdirSync(sourceDir, { recursive: true });
+    let files;
+    try {
+        files = fs.readdirSync(sourceDir, { recursive: true });
+    } catch {
+        // Fallback for older Node.js versions
+        files = [];
+        const walk = (dir, prefix = '') => {
+            const items = fs.readdirSync(dir);
+            for (const item of items) {
+                const fullPath = path.join(dir, item);
+                const relativePath = prefix ? path.join(prefix, item) : item;
+                if (fs.statSync(fullPath).isDirectory()) {
+                    walk(fullPath, relativePath);
+                } else {
+                    files.push(relativePath);
+                }
+            }
+        };
+        walk(sourceDir);
+    }
+
     let processedCount = 0;
     let skippedCount = 0;
 
@@ -199,15 +300,17 @@ function processDirectory(sourceDir, outputDir) {
         }
 
         // Only process test files
-        if (!/\.(test|spec)\.(ts|tsx|js|jsx)$/.test(file)) {
+        if (!/\.(test|spec)\.(ts|tsx|js|jsx|mjs)$/.test(file)) {
             // Copy non-test files as-is
+            fs.mkdirSync(path.dirname(outputPath), { recursive: true });
             fs.copyFileSync(sourcePath, outputPath);
             continue;
         }
 
         const code = fs.readFileSync(sourcePath, 'utf8');
-        const transformed = transformTestFile(code, sourcePath);
+        const transformed = transformTestFile(code, file, outputDir);
 
+        fs.mkdirSync(path.dirname(outputPath), { recursive: true });
         fs.writeFileSync(outputPath, transformed);
 
         if (transformed !== code) {
@@ -222,16 +325,24 @@ function processDirectory(sourceDir, outputDir) {
     console.log(`[DONE] Skipped: ${skippedCount} files`);
     console.log(`[DONE] Output: ${outputDir}`);
     console.log('\nRun tests with:');
-    console.log(`  npx jest ${outputDir}`);
+    console.log(`  npx jest ${outputDir} --forceExit`);
     console.log(`  npx vitest run ${outputDir}`);
-    console.log(`  npx mocha ${outputDir}/**/*.test.ts`);
+    console.log(`  npx mocha "${outputDir}/**/*.test.ts"`);
 }
 
 // CLI
 const args = process.argv.slice(2);
 if (args.length < 2) {
-    console.log('Usage: node scripts/wrap-test-files.js <source-dir> <output-dir>');
-    console.log('Example: node scripts/wrap-test-files.js __tests__ __tests_traced__');
+    console.log('Usage: node wrap-test-files.js <source-dir> <output-dir>');
+    console.log('');
+    console.log('Arguments:');
+    console.log('  source-dir   Directory containing test files');
+    console.log('  output-dir   Output directory for wrapped test files');
+    console.log('');
+    console.log('Examples:');
+    console.log('  node wrap-test-files.js __tests__ __tests_traced__');
+    console.log('  node wrap-test-files.js test test_traced');
+    console.log('  node wrap-test-files.js tests tests_traced');
     process.exit(1);
 }
 
