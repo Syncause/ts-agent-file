@@ -20,14 +20,11 @@ function ensureLogDir() {
     }
 }
 
-// Write span to log file (CachedSpanRec format)
+// Write span to log file (new format)
 function logSpan(spanData: Record<string, any>) {
     try {
         ensureLogDir();
-        const logLine = JSON.stringify({
-            timestamp: new Date().toISOString(),
-            ...spanData
-        }) + '\n';
+        const logLine = JSON.stringify(spanData) + '\n';
         fs.appendFileSync(SPAN_LOG_PATH, logLine);
     } catch (e) {
         // Ignore log errors
@@ -72,23 +69,29 @@ function toStr(val: any): string {
 /**
  * Wrap a function for tracing (with file logging)
  */
-function wrapFunction(fn: Function, spanName: string): Function {
+function wrapFunction(fn: Function, spanName: string, filePath?: string, lineNumber?: string): Function {
     if ((fn as any)[WRAPPED]) return fn;
 
     const wrapped = function (this: any, ...args: any[]) {
-        const startTimeMs = Date.now();
-        const startTimeMicro = startTimeMs * 1000;
+        // Get nanosecond precision timestamps
+        const startEpochNanos = BigInt(Date.now()) * BigInt(1_000_000);
         const span = getTracer().startSpan(spanName);
         const spanContext = (span as any).spanContext?.();
         const traceId = spanContext?.traceId || '';
-        const spanId = spanContext?.spanId || '';
 
         // Build attributes object
         const attributes: Record<string, any> = {
             'function.name': spanName,
             'function.type': 'user_function',
-            'function.args.count': args.length,
         };
+
+        // Add file and line info if available
+        if (filePath) {
+            attributes['file'] = filePath;
+        }
+        if (lineNumber) {
+            attributes['line'] = lineNumber;
+        }
 
         // Record arguments (up to 10)
         const maxArgs = Math.min(args.length, 10);
@@ -99,33 +102,31 @@ function wrapFunction(fn: Function, spanName: string): Function {
 
         span.setAttribute('function.name', spanName);
         span.setAttribute('function.type', 'user_function');
-        span.setAttribute('function.args.count', args.length);
 
         const ctx = trace.setSpan(context.active(), span);
 
-        // Helper to create CachedSpanRec format log
-        const createSpanLog = (statusCode: number, statusMessage?: string, returnValue?: string) => {
-            const endTimeMs = Date.now();
-            const endTimeMicro = endTimeMs * 1000;
-            const duration = endTimeMs - startTimeMs;
+        // Calculate call depth (level) - default to 1
+        const level = 1;
+
+        // Helper to create new format span log
+        const createSpanLog = (statusCode: string, description: string, returnValue?: string) => {
+            const endEpochNanos = BigInt(Date.now()) * BigInt(1_000_000);
 
             if (returnValue !== undefined) {
                 attributes['function.return.value'] = returnValue;
             }
 
             return {
-                traceId,
-                spanId,
-                parentSpanId: undefined,
                 name: spanName,
-                kind: '0', // INTERNAL
-                startTime: startTimeMicro,
-                endTime: endTimeMicro,
-                duration,
-                status: { code: statusCode, message: statusMessage },
+                level,
+                startEpochNanos: startEpochNanos.toString(),
+                endEpochNanos: endEpochNanos.toString(),
+                statusData: {
+                    statusCode,
+                    description,
+                },
                 attributes,
-                events: [],
-                links: [],
+                traceId,
             };
         };
 
@@ -137,14 +138,14 @@ function wrapFunction(fn: Function, spanName: string): Function {
                     .then((val) => {
                         span.setAttribute('function.return.value', toStr(val));
                         span.setStatus({ code: SpanStatusCode.OK });
-                        logSpan(createSpanLog(0, undefined, toStr(val)));
+                        logSpan(createSpanLog('OK', '', toStr(val)));
                         span.end();
                         return val;
                     })
                     .catch((err) => {
                         span.recordException(err);
                         span.setStatus({ code: SpanStatusCode.ERROR, message: String(err?.message || err) });
-                        logSpan(createSpanLog(2, String(err?.message || err)));
+                        logSpan(createSpanLog('ERROR', String(err?.message || err)));
                         span.end();
                         throw err;
                     });
@@ -152,13 +153,13 @@ function wrapFunction(fn: Function, spanName: string): Function {
 
             span.setAttribute('function.return.value', toStr(res));
             span.setStatus({ code: SpanStatusCode.OK });
-            logSpan(createSpanLog(0, undefined, toStr(res)));
+            logSpan(createSpanLog('OK', '', toStr(res)));
             span.end();
             return res;
         } catch (err: any) {
             span.recordException(err);
             span.setStatus({ code: SpanStatusCode.ERROR, message: String(err?.message || err) });
-            logSpan(createSpanLog(2, String(err?.message || err)));
+            logSpan(createSpanLog('ERROR', String(err?.message || err)));
             span.end();
             throw err;
         }
