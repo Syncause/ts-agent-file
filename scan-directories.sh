@@ -204,15 +204,15 @@ main() {
         fi
     fi
     
-    # Output human-readable list
-    echo "# Detected source directories:"
-    for dir in "${sorted_dirs[@]}"; do
-        echo "  - $dir"
-    done
-    echo
+    # Output human-readable list (commented out for clean output)
+    # echo "# Detected source directories:"
+    # for dir in "${sorted_dirs[@]}"; do
+    #     echo "  - $dir"
+    # done
+    # echo
     
-    # Output webpack include array
-    echo "# Webpack include array (copy to next.config.ts):"
+    # Output webpack include array (only line that's actually output)
+    # echo "# Webpack include array (copy to next.config.ts):"
     echo -n "include: ["
     
     local first=true
@@ -226,7 +226,7 @@ main() {
     done
     
     echo "]"
-    echo
+    # echo  # removed trailing newline
 }
 
 # Run main function
