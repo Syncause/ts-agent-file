@@ -47,8 +47,15 @@ echo_error() {
 # 1. Detect Package Manager
 if [ -f "pnpm-lock.yaml" ]; then
     PKG_MANAGER="pnpm"
-    INSTALL_CMD="pnpm add"
-    DEV_INSTALL_CMD="pnpm add -D"
+    # Check if this is a pnpm workspace
+    if [ -f "pnpm-workspace.yaml" ] || grep -q '"workspaces"' package.json 2>/dev/null; then
+        echo_step "Detected pnpm workspace"
+        INSTALL_CMD="pnpm add -w"
+        DEV_INSTALL_CMD="pnpm add -D -w"
+    else
+        INSTALL_CMD="pnpm add"
+        DEV_INSTALL_CMD="pnpm add -D"
+    fi
 elif [ -f "yarn.lock" ]; then
     PKG_MANAGER="yarn"
     # Check if this is a yarn workspace
