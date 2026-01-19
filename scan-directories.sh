@@ -33,6 +33,8 @@ SKIP_DIRS=(
     "instrumentation"
     "probe-wrapper"
     "loaders"
+    "scripts"    # Build/utility scripts, not source code
+    "src"        # Container dir, scan its children instead
 )
 
 # Directories that are typically source code (prioritize these)
@@ -169,26 +171,20 @@ to_webpack_regex() {
 # Main function
 main() {
     local project_root=$(pwd)
-    local has_src=false
-    
-    # Check if src/ directory exists
-    if [[ -d "$project_root/src" ]]; then
-        has_src=true
-    fi
     
     # Collect all directories
     local -a all_dirs=()
     
-    if [[ "$has_src" == "true" ]]; then
-        # Scan src/ directory
+    # Always scan root directory first (depth 1 only to find top-level dirs)
+    while IFS= read -r dir; do
+        all_dirs+=("$dir")
+    done < <(scan_directory "$project_root" 1 0 "")
+    
+    # If src/ directory exists, also scan it recursively
+    if [[ -d "$project_root/src" ]]; then
         while IFS= read -r dir; do
             all_dirs+=("$dir")
         done < <(scan_directory "$project_root/src" 3 0 "src")
-    else
-        # Scan root directory
-        while IFS= read -r dir; do
-            all_dirs+=("$dir")
-        done < <(scan_directory "$project_root" 2 0 "")
     fi
     
     # Sort directories
