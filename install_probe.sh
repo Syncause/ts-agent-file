@@ -51,8 +51,15 @@ if [ -f "pnpm-lock.yaml" ]; then
     DEV_INSTALL_CMD="pnpm add -D"
 elif [ -f "yarn.lock" ]; then
     PKG_MANAGER="yarn"
-    INSTALL_CMD="yarn add"
-    DEV_INSTALL_CMD="yarn add -D"
+    # Check if this is a yarn workspace
+    if grep -q '"workspaces"' package.json 2>/dev/null; then
+        echo_step "Detected Yarn workspace"
+        INSTALL_CMD="yarn add -W"
+        DEV_INSTALL_CMD="yarn add -D -W"
+    else
+        INSTALL_CMD="yarn add"
+        DEV_INSTALL_CMD="yarn add -D"
+    fi
 else
     PKG_MANAGER="npm"
     INSTALL_CMD="npm install"
