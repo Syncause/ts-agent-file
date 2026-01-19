@@ -6,7 +6,9 @@
 set -e
 
 # --- Configuration ---
-GITHUB_BASE="https://raw.githubusercontent.com/Syncause/ts-agent-file/v1.0.0"
+TAG="${1:-v1.0.0}"
+GITHUB_BASE="https://raw.githubusercontent.com/Syncause/ts-agent-file/${TAG}"
+echo_step "Using version tag: $TAG"
 CORE_DEPS=(
     "@opentelemetry/sdk-node"
     "@opentelemetry/api"
@@ -58,14 +60,43 @@ else
 fi
 echo_step "Using package manager: $PKG_MANAGER"
 
-# 2. Detect Project Type
-PROJECT_TYPE="js"
-if [ -f "next.config.js" ] || [ -f "next.config.mjs" ] || [ -f "next.config.ts" ]; then
-    PROJECT_TYPE="next"
-elif [ -f "tsconfig.json" ] || grep -q '"typescript"' package.json || [ -n "$(find src -name "*.ts" 2>/dev/null | head -n 1)" ]; then
-    PROJECT_TYPE="ts"
+# 2. Detect Project Type (Following VSCode extension logic)
+# Priority: Next.js > TypeScript > JavaScript
+echo_step "Detecting project type..."
+
+# Step 1: Check if package.json exists (required for Node.js projects)
+if [ ! -f "package.json" ]; then
+    echo_error "package.json not found. This doesn't appear to be a Node.js project."
+    exit 1
 fi
-echo_step "Detected project type: $PROJECT_TYPE"
+
+# Step 2: Check for Next.js dependency (highest priority)
+if grep -q '"next"' package.json; then
+    PROJECT_TYPE="next"
+    echo_step "✓ Detected Next.js project"
+else
+    # Step 3: Check for TypeScript indicators
+    PROJECT_TYPE="js"
+    
+    # Check 1: TypeScript or @types/node in dependencies/devDependencies
+    if grep -qE '"(typescript|@types/node)"' package.json; then
+        PROJECT_TYPE="ts"
+        echo_step "✓ Detected TypeScript via package.json dependencies"
+    # Check 2: tsconfig.json exists
+    elif [ -f "tsconfig.json" ]; then
+        PROJECT_TYPE="ts"
+        echo_step "✓ Detected TypeScript via tsconfig.json"
+    # Check 3: .ts or .tsx files in root or src directory
+    elif [ -n "$(find . -maxdepth 1 -name '*.ts' -o -name '*.tsx' 2>/dev/null | head -n 1)" ] || \
+         [ -d "src" ] && [ -n "$(find src -maxdepth 1 -name '*.ts' -o -name '*.tsx' 2>/dev/null | head -n 1)" ]; then
+        PROJECT_TYPE="ts"
+        echo_step "✓ Detected TypeScript via source files"
+    else
+        echo_step "✓ Detected JavaScript project (no TypeScript indicators)"
+    fi
+fi
+
+echo_step "Final project type: $PROJECT_TYPE"
 
 # 3. Detect Target Directory
 if [ -d "src" ]; then
