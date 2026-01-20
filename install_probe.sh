@@ -5,6 +5,19 @@
 
 set -e
 
+# --- Helper Functions ---
+echo_step() {
+    echo -e "\033[1;34m==>\033[0m $1"
+}
+
+echo_success() {
+    echo -e "\033[1;32mSUCCESS:\033[0m $1"
+}
+
+echo_error() {
+    echo -e "\033[1;31mERROR:\033[0m $1"
+}
+
 # --- Configuration ---
 TAG="${1:-v1.0.0}"
 GITHUB_BASE="https://raw.githubusercontent.com/Syncause/ts-agent-file/${TAG}"
@@ -30,19 +43,6 @@ NEXT_DEPS=(
     "@babel/traverse"
     "magic-string"
 )
-
-# --- Helper Functions ---
-echo_step() {
-    echo -e "\033[1;34m==>\033[0m $1"
-}
-
-echo_success() {
-    echo -e "\033[1;32mSUCCESS:\033[0m $1"
-}
-
-echo_error() {
-    echo -e "\033[1;31mERROR:\033[0m $1"
-}
 
 # 1. Detect Package Manager
 if [ -f "pnpm-lock.yaml" ]; then
