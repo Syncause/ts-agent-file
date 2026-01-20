@@ -170,12 +170,30 @@ if (projectType === "next") {
     }
 } else if (projectType === "ts") {
     if (pkg.scripts.dev && !pkg.scripts.dev.includes("--import")) {
-         pkg.scripts.dev = "tsx --import " + baseDir + "instrumentation.node.ts " + (pkg.scripts.dev.includes("src/index.ts") ? "src/index.ts" : pkg.main || "");
+        const devCmd = pkg.scripts.dev;
+        // Try to intelligently insert --import flag
+        if (devCmd.startsWith("tsx ")) {
+            // For tsx commands: tsx ... -> tsx --import ./instrumentation.node.ts ...
+            pkg.scripts.dev = devCmd.replace(/^tsx\s+/, "tsx --import " + baseDir + "instrumentation.node.ts ");
+        } else if (devCmd.startsWith("node ")) {
+            // For node commands: node ... -> node --import ./instrumentation.node.ts ...
+            pkg.scripts.dev = devCmd.replace(/^node\s+/, "node --import " + baseDir + "instrumentation.node.ts ");
+        } else {
+            // Fallback: prepend tsx --import
+            pkg.scripts.dev = "tsx --import " + baseDir + "instrumentation.node.ts " + devCmd;
+        }
     }
 } else if (projectType === "js") {
-     if (pkg.scripts.dev && !pkg.scripts.dev.includes("--require")) {
-         pkg.scripts.dev = "node --require " + baseDir + "instrumentation.js " + (pkg.main || "index.js");
-     }
+    if (pkg.scripts.dev && !pkg.scripts.dev.includes("--require")) {
+        const devCmd = pkg.scripts.dev;
+        // For node commands: node ... -> node --require ./instrumentation.js ...
+        if (devCmd.startsWith("node ")) {
+            pkg.scripts.dev = devCmd.replace(/^node\s+/, "node --require " + baseDir + "instrumentation.js ");
+        } else {
+            // Fallback: prepend node --require
+            pkg.scripts.dev = "node --require " + baseDir + "instrumentation.js " + devCmd;
+        }
+    }
 }
 fs.writeFileSync("package.json", JSON.stringify(pkg, null, 2));
 '
