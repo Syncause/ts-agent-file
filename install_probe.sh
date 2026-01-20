@@ -61,8 +61,9 @@ elif [ -f "yarn.lock" ]; then
     # Check if this is a yarn workspace
     if grep -q '"workspaces"' package.json 2>/dev/null; then
         echo_step "Detected Yarn workspace"
-        INSTALL_CMD="yarn add -W"
-        DEV_INSTALL_CMD="yarn add -D -W"
+        # Use --ignore-workspace-root-check for Yarn 1.x compatibility
+        INSTALL_CMD="yarn add --ignore-workspace-root-check"
+        DEV_INSTALL_CMD="yarn add -D --ignore-workspace-root-check"
     else
         INSTALL_CMD="yarn add"
         DEV_INSTALL_CMD="yarn add -D"
