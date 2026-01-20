@@ -80,7 +80,9 @@ module.exports = function probeLoader(source) {
         resourcePath.includes('/server/') ||
         resourcePath.includes('/actions/') ||
         resourcePath.includes('/api/') ||
-        resourcePath.includes('/app/')) {
+        resourcePath.includes('/app/') ||
+        resourcePath.includes('/components/') ||
+        resourcePath.includes('/pages/')) {
         return source;
     }
 
