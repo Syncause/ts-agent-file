@@ -169,7 +169,143 @@ if [ "$PROJECT_TYPE" == "next" ]; then
     $DEV_INSTALL_CMD "${NEXT_DEPS[@]}"
 fi
 
-# 5. Modify package.json (Basic attempt)
+# 5. Configure tsconfig.json for @/probe-wrapper path alias (TypeScript/Next.js projects)
+if [ "$PROJECT_TYPE" == "ts" ] || [ "$PROJECT_TYPE" == "next" ]; then
+    echo_step "Configuring tsconfig.json with @/probe-wrapper path alias..."
+    
+    node -e '
+    const fs = require("fs");
+    const targetDir = "'$TARGET_DIR'";
+    const probeWrapperPath = targetDir === "." ? "./probe-wrapper" : "./" + targetDir + "/probe-wrapper";
+    
+    if (fs.existsSync("tsconfig.json")) {
+        try {
+            const tsconfig = JSON.parse(fs.readFileSync("tsconfig.json", "utf8"));
+            
+            // Ensure compilerOptions exists
+            if (!tsconfig.compilerOptions) {
+                tsconfig.compilerOptions = {};
+            }
+            
+            // Ensure baseUrl is set (required for paths)
+            if (!tsconfig.compilerOptions.baseUrl) {
+                tsconfig.compilerOptions.baseUrl = ".";
+            }
+            
+            // Ensure paths exists
+            if (!tsconfig.compilerOptions.paths) {
+                tsconfig.compilerOptions.paths = {};
+            }
+            
+            // Add @/probe-wrapper path alias
+            tsconfig.compilerOptions.paths["@/probe-wrapper"] = [probeWrapperPath];
+            
+            fs.writeFileSync("tsconfig.json", JSON.stringify(tsconfig, null, 2));
+            console.log("✓ Added @/probe-wrapper path alias to tsconfig.json");
+        } catch (e) {
+            console.error("Warning: Could not update tsconfig.json:", e.message);
+        }
+    } else {
+        console.log("Warning: tsconfig.json not found, skipping path alias configuration");
+    }
+    '
+fi
+
+# 6. Configure next.config.js for Next.js projects (Webpack alias + probe-loader)
+if [ "$PROJECT_TYPE" == "next" ]; then
+    echo_step "Configuring next.config.js with Webpack probe-loader and path alias..."
+    
+    node -e '
+    const fs = require("fs");
+    const path = require("path");
+    const targetDir = "'$TARGET_DIR'";
+    
+    // Find next.config file (could be .js, .mjs, or .ts)
+    const configFiles = ["next.config.js", "next.config.mjs", "next.config.ts"];
+    let configFile = null;
+    for (const file of configFiles) {
+        if (fs.existsSync(file)) {
+            configFile = file;
+            break;
+        }
+    }
+    
+    if (!configFile) {
+        console.log("Warning: next.config.* not found, skipping webpack configuration");
+        process.exit(0);
+    }
+    
+    let content = fs.readFileSync(configFile, "utf8");
+    
+    // Check if already configured
+    if (content.includes("probe-loader") || content.includes("@/probe-wrapper")) {
+        console.log("✓ next.config already has probe configuration, skipping");
+        process.exit(0);
+    }
+    
+    // Check if webpack config already exists
+    const hasWebpack = content.includes("webpack:");
+    const hasInstrumentationHook = content.includes("instrumentationHook");
+    
+    // Calculate paths based on target directory
+    const probeWrapperPath = targetDir === "." ? "probe-wrapper.ts" : targetDir + "/probe-wrapper.ts";
+    
+    // Determine if we need to add path require
+    const needsPathRequire = !content.includes("require(\"path\")") && !content.includes("require('"'"'path'"'"')") && !content.includes("from \"path\"") && !content.includes("from '"'"'path'"'"'");
+    
+    // Build the webpack config to inject
+    const webpackConfig = `
+  webpack: (config, { isServer }) => {
+    // Add path alias for @/probe-wrapper
+    config.resolve.alias["@/probe-wrapper"] = require("path").join(__dirname, "${probeWrapperPath}");
+
+    // Add probe-loader to process TypeScript/JavaScript files
+    config.module.rules.push({
+      test: /\\.(tsx?|jsx?)$/,
+      exclude: /node_modules/,
+      use: {
+        loader: require("path").join(__dirname, "loaders", "probe-loader.js"),
+      },
+    });
+
+    return config;
+  },`;
+
+    const experimentalConfig = `
+  experimental: {
+    instrumentationHook: true,
+  },`;
+
+    // Inject configurations
+    // Find the position after "const nextConfig = {" or similar
+    const configStartMatch = content.match(/(const\s+\w+\s*=\s*\{|module\.exports\s*=\s*\{|export\s+default\s*\{)/);
+    
+    if (configStartMatch) {
+        const insertPos = content.indexOf(configStartMatch[0]) + configStartMatch[0].length;
+        let insertContent = "";
+        
+        // Add experimental config if not exists
+        if (!hasInstrumentationHook) {
+            insertContent += experimentalConfig;
+        }
+        
+        // Add webpack config if not exists
+        if (!hasWebpack) {
+            insertContent += webpackConfig;
+        }
+        
+        if (insertContent) {
+            content = content.slice(0, insertPos) + insertContent + content.slice(insertPos);
+            fs.writeFileSync(configFile, content);
+            console.log("✓ Added Webpack probe-loader and instrumentationHook to " + configFile);
+        }
+    } else {
+        console.log("Warning: Could not find config object in " + configFile);
+    }
+    '
+fi
+
+# 7. Modify package.json scripts
 echo_step "Updating package.json scripts (manual double-check required)..."
 # Use node script to safely modify package.json
 node -e '
