@@ -243,31 +243,30 @@ if [ "$PROJECT_TYPE" == "next" ]; then
         process.exit(0);
     }
     
+    // Calculate paths based on target directory
+    const probeWrapperPath = targetDir === "." ? "probe-wrapper.ts" : targetDir + "/probe-wrapper.ts";
+    
     // Check if webpack config already exists
     const hasWebpack = content.includes("webpack:");
     const hasInstrumentationHook = content.includes("instrumentationHook");
     
-    // Calculate paths based on target directory
-    const probeWrapperPath = targetDir === "." ? "probe-wrapper.ts" : targetDir + "/probe-wrapper.ts";
-    
-    // Determine if we need to add path require
-    const needsPathRequire = !content.includes("require(\"path\")") && !content.includes("require('"'"'path'"'"')") && !content.includes("from \"path\"") && !content.includes("from '"'"'path'"'"'");
-    
-    // Build the webpack config to inject
-    const webpackConfig = `
-  webpack: (config, { isServer }) => {
-    // Add path alias for @/probe-wrapper
+    // Code to inject at the beginning of existing webpack function
+    const probeInjection = `
+    // Probe configuration - injected by install_probe.sh
+    config.resolve = config.resolve || {};
+    config.resolve.alias = config.resolve.alias || {};
     config.resolve.alias["@/probe-wrapper"] = require("path").join(__dirname, "${probeWrapperPath}");
-
-    // Add probe-loader to process TypeScript/JavaScript files
     config.module.rules.push({
-      test: /\\.(tsx?|jsx?)$/,
+      test: /\\\\.(tsx?|jsx?)$/,
       exclude: /node_modules/,
-      use: {
-        loader: require("path").join(__dirname, "loaders", "probe-loader.js"),
-      },
+      use: { loader: require("path").join(__dirname, "loaders", "probe-loader.js") },
     });
-
+    // End probe configuration
+`;
+    
+    // Full webpack config for new additions
+    const fullWebpackConfig = `
+  webpack: (config, { isServer }) => {${probeInjection}
     return config;
   },`;
 
@@ -276,34 +275,62 @@ if [ "$PROJECT_TYPE" == "next" ]; then
     instrumentationHook: true,
   },`;
 
-    // Inject configurations
-    // Find the position after "const nextConfig = {" or similar
-    const configStartMatch = content.match(/(const\s+\w+\s*=\s*\{|module\.exports\s*=\s*\{|export\s+default\s*\{)/);
+    let modified = false;
     
-    if (configStartMatch) {
-        const insertPos = content.indexOf(configStartMatch[0]) + configStartMatch[0].length;
-        let insertContent = "";
+    // If webpack already exists, inject into the existing function
+    if (hasWebpack) {
+        // Find the webpack function body - look for patterns like:
+        // webpack: (config, ...) => { or webpack(config, ...) { or webpack: function(config, ...) {
+        const webpackPatterns = [
+            /(webpack:\s*\([^)]*\)\s*=>\s*\{)/,           // webpack: (config, ...) => {
+            /(webpack\s*\([^)]*\)\s*\{)/,                 // webpack(config, ...) {
+            /(webpack:\s*function\s*\([^)]*\)\s*\{)/,     // webpack: function(config, ...) {
+        ];
         
-        // Add experimental config if not exists
-        if (!hasInstrumentationHook) {
-            insertContent += experimentalConfig;
+        for (const pattern of webpackPatterns) {
+            const match = content.match(pattern);
+            if (match) {
+                const insertPos = content.indexOf(match[0]) + match[0].length;
+                content = content.slice(0, insertPos) + probeInjection + content.slice(insertPos);
+                console.log("✓ Injected probe configuration into existing webpack config");
+                modified = true;
+                break;
+            }
         }
         
-        // Add webpack config if not exists
-        if (!hasWebpack) {
-            insertContent += webpackConfig;
-        }
-        
-        if (insertContent) {
-            content = content.slice(0, insertPos) + insertContent + content.slice(insertPos);
-            fs.writeFileSync(configFile, content);
-            console.log("✓ Added Webpack probe-loader and instrumentationHook to " + configFile);
+        if (!modified) {
+            console.log("Warning: Found webpack config but could not inject probe configuration");
+            console.log("Please manually add probe-loader to your webpack configuration");
         }
     } else {
-        console.log("Warning: Could not find config object in " + configFile);
+        // No webpack config exists, add new one
+        const configStartMatch = content.match(/(const\s+\w+\s*=\s*\{|module\.exports\s*=\s*\{|export\s+default\s*\{)/);
+        
+        if (configStartMatch) {
+            const insertPos = content.indexOf(configStartMatch[0]) + configStartMatch[0].length;
+            content = content.slice(0, insertPos) + fullWebpackConfig + content.slice(insertPos);
+            console.log("✓ Added new webpack configuration with probe-loader");
+            modified = true;
+        }
+    }
+    
+    // Add experimental.instrumentationHook if not exists
+    if (!hasInstrumentationHook) {
+        const configStartMatch = content.match(/(const\s+\w+\s*=\s*\{|module\.exports\s*=\s*\{|export\s+default\s*\{)/);
+        if (configStartMatch) {
+            const insertPos = content.indexOf(configStartMatch[0]) + configStartMatch[0].length;
+            content = content.slice(0, insertPos) + experimentalConfig + content.slice(insertPos);
+            console.log("✓ Added experimental.instrumentationHook");
+            modified = true;
+        }
+    }
+    
+    if (modified) {
+        fs.writeFileSync(configFile, content);
     }
     '
 fi
+
 
 # 7. Modify package.json scripts
 echo_step "Updating package.json scripts (manual double-check required)..."

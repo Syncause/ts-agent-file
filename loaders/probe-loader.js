@@ -70,19 +70,14 @@ module.exports = function probeLoader(source) {
     const resourcePath = this.resourcePath;
     const relativePath = path.relative(process.cwd(), resourcePath);
 
-    // Skip node_modules, probe-wrapper, instrumentation, and common utility directories
-    // that often contain Next.js server-side utilities calling headers(), cookies(), etc.
+    // Skip node_modules, probe-wrapper, instrumentation files
+    // Also skip directories that commonly use Next.js async APIs (headers, cookies, auth)
+    // which can break when wrapped due to async context issues
     if (resourcePath.includes('node_modules') ||
         resourcePath.includes('probe-wrapper') ||
         resourcePath.includes('instrumentation') ||
-        resourcePath.includes('/lib/') ||
-        resourcePath.includes('/utils/') ||
-        resourcePath.includes('/server/') ||
-        resourcePath.includes('/actions/') ||
-        resourcePath.includes('/api/') ||
-        resourcePath.includes('/app/') ||
-        resourcePath.includes('/components/') ||
-        resourcePath.includes('/pages/')) {
+        resourcePath.includes('/actions/') ||     // Server Actions use async context
+        resourcePath.includes('/api/')) {         // API routes use server context
         return source;
     }
 
