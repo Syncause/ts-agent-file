@@ -70,10 +70,16 @@ module.exports = function probeLoader(source) {
     const resourcePath = this.resourcePath;
     const relativePath = path.relative(process.cwd(), resourcePath);
 
-    // Skip node_modules and probe-wrapper themselves
+    // Skip node_modules, probe-wrapper, instrumentation, and common utility directories
+    // that often contain Next.js server-side utilities calling headers(), cookies(), etc.
     if (resourcePath.includes('node_modules') ||
         resourcePath.includes('probe-wrapper') ||
-        resourcePath.includes('instrumentation')) {
+        resourcePath.includes('instrumentation') ||
+        resourcePath.includes('/lib/') ||
+        resourcePath.includes('/utils/') ||
+        resourcePath.includes('/server/') ||
+        resourcePath.includes('/actions/') ||
+        resourcePath.includes('/api/')) {
         return source;
     }
 
