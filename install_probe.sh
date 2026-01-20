@@ -58,12 +58,28 @@ if [ -f "pnpm-lock.yaml" ]; then
     fi
 elif [ -f "yarn.lock" ]; then
     PKG_MANAGER="yarn"
+    # Detect Yarn version
+    YARN_VERSION=$(yarn --version 2>/dev/null | head -n 1)
+    YARN_MAJOR=$(echo "$YARN_VERSION" | cut -d. -f1)
+    
     # Check if this is a yarn workspace
     if grep -q '"workspaces"' package.json 2>/dev/null; then
-        echo_step "Detected Yarn workspace"
-        # Use --ignore-workspace-root-check for Yarn 1.x compatibility
-        INSTALL_CMD="yarn add --ignore-workspace-root-check"
-        DEV_INSTALL_CMD="yarn add -D --ignore-workspace-root-check"
+        echo_step "Detected Yarn workspace (Yarn v$YARN_VERSION)"
+        
+        # Choose the correct flag based on Yarn version
+        if [ "$YARN_MAJOR" = "1" ]; then
+            # Yarn 1.x (Classic) uses --ignore-workspace-root-check
+            INSTALL_CMD="yarn add --ignore-workspace-root-check"
+            DEV_INSTALL_CMD="yarn add -D --ignore-workspace-root-check"
+        elif [ "$YARN_MAJOR" = "2" ] || [ "$YARN_MAJOR" = "3" ]; then
+            # Yarn 2.x and 3.x (Berry) use -W
+            INSTALL_CMD="yarn add -W"
+            DEV_INSTALL_CMD="yarn add -D -W"
+        else
+            # Yarn 4.x+ does not need special flags for workspace root installation
+            INSTALL_CMD="yarn add"
+            DEV_INSTALL_CMD="yarn add -D"
+        fi
     else
         INSTALL_CMD="yarn add"
         DEV_INSTALL_CMD="yarn add -D"
