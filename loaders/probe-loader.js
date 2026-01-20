@@ -79,7 +79,15 @@ module.exports = function probeLoader(source) {
         resourcePath.includes('/utils/') ||
         resourcePath.includes('/server/') ||
         resourcePath.includes('/actions/') ||
-        resourcePath.includes('/api/')) {
+        resourcePath.includes('/api/') ||
+        resourcePath.includes('/app/')) {
+        return source;
+    }
+
+    // Skip Next.js App Router special files (they use async context for headers/cookies)
+    const fileName = path.basename(resourcePath, path.extname(resourcePath));
+    const NEXTJS_SPECIAL_FILES = ['page', 'layout', 'loading', 'error', 'not-found', 'template', 'default', 'route', 'middleware', 'global-error'];
+    if (NEXTJS_SPECIAL_FILES.includes(fileName)) {
         return source;
     }
 
