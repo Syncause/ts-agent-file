@@ -3,6 +3,11 @@
  * 
  * This module can be imported directly by user code without triggering probe initialization.
  * It uses the OpenTelemetry API to create spans for tracking function execution.
+ * 
+ * Compatible with:
+ * - Next.js 15/16 (App Router, Server Components)
+ * - Node.js / Express
+ * - TypeScript / JavaScript projects
  */
 
 import { trace, context, SpanStatusCode } from '@opentelemetry/api';
@@ -18,23 +23,49 @@ function isPromiseLike(val: any): val is Promise<any> {
 }
 
 /**
- * Convert the value to a string (used for span attributes)
+ * Safely convert a value to a string for span attributes.
+ * 
+ * This function is designed to be safe for all environments:
+ * - Avoids accessing properties on Proxy objects (Next.js headers(), cookies())
+ * - Handles circular references gracefully
+ * - Limits output size to prevent performance issues
  */
 function toStr(val: any): string {
-    if (val === undefined) return '';
+    if (val === undefined) return 'undefined';
     if (val === null) return 'null';
-    if (typeof val === 'string') return val.length > 1000 ? val.slice(0, 1000) + '...' : val;
+    if (typeof val === 'string') return val.length > 500 ? val.slice(0, 500) + '...' : val;
     if (typeof val === 'number' || typeof val === 'boolean') return String(val);
-    if (Array.isArray(val)) return `Array(${val.length})`;
+    if (typeof val === 'function') return `[Function: ${val.name || 'anonymous'}]`;
+    if (typeof val === 'symbol') return val.toString();
+
     if (typeof val === 'object') {
+        // Handle arrays - just return count, don't iterate
+        if (Array.isArray(val)) return `[Array(${val.length})]`;
+
+        // For objects, use constructor name to avoid triggering getters/proxies
+        // This is safe for Next.js dynamic APIs like headers(), cookies()
         try {
-            const s = JSON.stringify(val);
-            return s.length > 1000 ? s.slice(0, 1000) + '...' : s;
+            const typeName = val.constructor?.name || 'Object';
+
+            // For plain objects, attempt safe JSON serialization
+            // but catch any errors from proxy traps
+            if (typeName === 'Object') {
+                try {
+                    const s = JSON.stringify(val);
+                    return s && s.length > 500 ? s.slice(0, 500) + '...' : (s || '[Object]');
+                } catch {
+                    return '[Object]';
+                }
+            }
+
+            // For class instances or special objects, just return type name
+            return `[${typeName}]`;
         } catch {
-            return '[unserializable]';
+            return '[Object]';
         }
     }
-    return String(val);
+
+    return '[unknown]';
 }
 
 /**
@@ -50,8 +81,8 @@ function wrapFunction(fn: Function, spanName: string): Function {
         span.setAttribute('function.type', 'user_function');
         span.setAttribute('function.args.count', args.length);
 
-        // Record arguments (up to 10)
-        const maxArgs = Math.min(args.length, 10);
+        // Record arguments (up to 5 for balance between info and safety)
+        const maxArgs = Math.min(args.length, 5);
         for (let i = 0; i < maxArgs; i++) {
             span.setAttribute(`function.args.${i}`, toStr(args[i]));
         }
@@ -61,6 +92,7 @@ function wrapFunction(fn: Function, spanName: string): Function {
         try {
             const res = context.with(ctx, () => fn.apply(this, args));
 
+            // Handle async functions (Promise return)
             if (isPromiseLike(res)) {
                 return res
                     .then((val) => {
@@ -77,6 +109,7 @@ function wrapFunction(fn: Function, spanName: string): Function {
                     });
             }
 
+            // Handle sync functions
             span.setAttribute('function.return.value', toStr(res));
             span.setStatus({ code: SpanStatusCode.OK });
             span.end();
@@ -90,6 +123,8 @@ function wrapFunction(fn: Function, spanName: string): Function {
     };
 
     (wrapped as any)[WRAPPED] = true;
+    // Preserve function name for debugging
+    Object.defineProperty(wrapped, 'name', { value: fn.name, configurable: true });
     return wrapped;
 }
 
@@ -141,4 +176,3 @@ export function traced<T extends (...args: any[]) => Promise<any>>(fn: T, name?:
     const spanName = name || fn.name || 'tracedAsync';
     return wrapFunction(fn, spanName) as T;
 }
-
