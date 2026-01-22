@@ -213,14 +213,27 @@ const ${func.name} = wrapUserFunction(${internalName}, '${func.name}');`;
         if (!hasImport) {
             // Check for 'use client' or 'use server' directives
             let insertPosition = 0;
-            const firstStatement = ast.program.body[0];
-            if (firstStatement &&
-                firstStatement.type === 'ExpressionStatement' &&
-                firstStatement.expression.type === 'Literal' &&
-                (firstStatement.expression.value === 'use client' ||
-                    firstStatement.expression.value === 'use server')) {
-                // Insert after the directive
-                insertPosition = firstStatement.end;
+
+            // 1. Check ast.program.directives (Babel specific)
+            if (ast.program.directives && ast.program.directives.length > 0) {
+                // Find the last directive
+                const lastDirective = ast.program.directives[ast.program.directives.length - 1];
+                insertPosition = lastDirective.end;
+            }
+            // 2. Fallback: check first statement in body (ExpressionStatement with Literal)
+            else {
+                const firstStatement = ast.program.body[0];
+                if (firstStatement &&
+                    firstStatement.type === 'ExpressionStatement' &&
+                    (firstStatement.expression.type === 'Literal' || firstStatement.expression.type === 'StringLiteral') &&
+                    (firstStatement.expression.value === 'use client' ||
+                        firstStatement.expression.value === 'use server')) {
+                    insertPosition = firstStatement.end;
+                }
+            }
+
+            if (insertPosition > 0) {
+                // Insert after the directive (ensure semicolon and newline)
                 s.appendLeft(insertPosition, `\nimport { wrapUserFunction } from '${importPath}';`);
             } else {
                 // Insert at the beginning of the file
