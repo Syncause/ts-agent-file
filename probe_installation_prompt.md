@@ -3,6 +3,10 @@
 When tasked with installing the TS/JS Probe into a project, follow this prioritized execution flow:
 
 ## 1. Automated Installation
+
+> [!IMPORTANT]
+> You **MUST** run the installer script to download probe files from GitHub. **DO NOT** create `probe-loader.js` manually - it contains critical logic for handling "use client" and "use server" directives that must be downloaded from the official repository.
+
 Identify the project type (Next.js, TypeScript, or JavaScript) and run the installer directly from GitHub:
 ```bash
 curl -sL https://raw.githubusercontent.com/Syncause/ts-agent-file/v1.0.0/install_probe.sh | bash
