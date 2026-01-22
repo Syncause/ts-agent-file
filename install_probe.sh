@@ -277,7 +277,7 @@ if [ "$PROJECT_TYPE" == "next" ]; then
         exclude: [/node_modules/, /\\.next/, /instrumentation/, /probe-wrapper/],
         use: { loader: require("path").join(__dirname, "loaders", "probe-loader.js") },
       });
-      console.log('[next.config] probe-loader enabled for server-side');
+      console.log(\"[next.config] probe-loader enabled for server-side\");
     }
     // End probe configuration
 `;
