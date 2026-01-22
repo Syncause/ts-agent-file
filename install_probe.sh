@@ -19,7 +19,7 @@ echo_error() {
 }
 
 # --- Configuration ---
-TAG="${1:-v1.0.0}"
+TAG="${1:-v1.1.0}"
 GITHUB_BASE="https://raw.githubusercontent.com/Syncause/ts-agent-file/${TAG}"
 echo_step "Using version tag: $TAG"
 CORE_DEPS=(
@@ -248,31 +248,44 @@ if [ "$PROJECT_TYPE" == "next" ]; then
     
     // Check if webpack config already exists
     const hasWebpack = content.includes("webpack:");
-    const hasInstrumentationHook = content.includes("instrumentationHook");
+    const hasServerExternalPackages = content.includes("serverExternalPackages");
     
-    // Code to inject at the beginning of existing webpack function
+    // serverExternalPackages to inject (if not already present)
+    const serverExternalPackagesConfig = `
+  serverExternalPackages: [
+    '@opentelemetry/sdk-node',
+    '@opentelemetry/auto-instrumentations-node',
+    '@opentelemetry/api',
+    '@opentelemetry/instrumentation',
+    '@opentelemetry/winston-transport',
+    '@opentelemetry/exporter-logs-otlp-grpc',
+    '@opentelemetry/exporter-metrics-otlp-grpc',
+    '@grpc/grpc-js',
+    '@grpc/proto-loader',
+    'express',
+    'ws',
+    'bufferutil',
+    'utf-8-validate',
+  ],`;
+
+    // Code to inject at the beginning of existing webpack function (with isServer check)
     const probeInjection = `
     // Probe configuration - injected by install_probe.sh
-    config.resolve = config.resolve || {};
-    config.resolve.alias = config.resolve.alias || {};
-    config.resolve.alias["@/probe-wrapper"] = require("path").join(__dirname, "${probeWrapperPath}");
-    config.module.rules.push({
-      test: /\\.(tsx?|jsx?)$/,
-      exclude: /node_modules/,
-      use: { loader: require("path").join(__dirname, "loaders", "probe-loader.js") },
-    });
+    if (isServer) {
+      config.module.rules.push({
+        test: /\\.(tsx?|jsx?)$/,
+        exclude: [/node_modules/, /\\.next/, /instrumentation/, /probe-wrapper/],
+        use: { loader: require("path").join(__dirname, "loaders", "probe-loader.js") },
+      });
+      console.log('[next.config] probe-loader enabled for server-side');
+    }
     // End probe configuration
 `;
     
     // Full webpack config for new additions
-    const webpackConfig = `
+    const webpackConfig = `${serverExternalPackagesConfig}
   webpack: (config, { isServer }) => {${probeInjection}
     return config;
-  },`;
-
-    const experimentalConfig = `
-  experimental: {
-    instrumentationHook: true,
   },`;
 
     let modified = false;
@@ -334,6 +347,9 @@ const baseDir = targetDir === "." ? "./" : "./" + targetDir + "/";
 if (projectType === "next") {
     if (pkg.scripts.dev && !pkg.scripts.dev.includes("--webpack")) {
         pkg.scripts.dev = pkg.scripts.dev.replace("next dev", "next dev --webpack");
+    }
+    if (pkg.scripts.build && !pkg.scripts.build.includes("--webpack")) {
+        pkg.scripts.build = pkg.scripts.build.replace("next build", "next build --webpack");
     }
 } else if (projectType === "ts") {
     if (pkg.scripts.dev && !pkg.scripts.dev.includes("--import")) {
