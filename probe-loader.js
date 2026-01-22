@@ -234,7 +234,7 @@ const ${func.name} = wrapUserFunction(${internalName}, '${func.name}');`;
 
             if (insertPosition > 0) {
                 // Insert after the directive (ensure semicolon and newline)
-                s.appendLeft(insertPosition, `\nimport { wrapUserFunction } from '${importPath}';`);
+                s.appendLeft(insertPosition, `; \nimport { wrapUserFunction } from '${importPath}';`);
             } else {
                 // Insert at the beginning of the file
                 s.prepend(`import { wrapUserFunction } from '${importPath}';\n`);
