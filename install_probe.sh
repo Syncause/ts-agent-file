@@ -304,7 +304,7 @@ if [ "$PROJECT_TYPE" == "next" ]; then
         }
     } else {
         // No webpack config exists, add new one
-        const configStartMatch = content.match(/(const\s+\w+\s*=\s*\{|module\.exports\s*=\s*\{|export\s+default\s*\{)/);
+        const configStartMatch = content.match(/(const\s+\w+\s*(?::\s*\w+)?\s*=\s*\{|module\.exports\s*=\s*\{|export\s+default\s*\{)/);
         
         if (configStartMatch) {
             const insertPos = content.indexOf(configStartMatch[0]) + configStartMatch[0].length;
@@ -316,7 +316,7 @@ if [ "$PROJECT_TYPE" == "next" ]; then
     
     // Add experimental.instrumentationHook if not exists
     if (!hasInstrumentationHook) {
-        const configStartMatch = content.match(/(const\s+\w+\s*=\s*\{|module\.exports\s*=\s*\{|export\s+default\s*\{)/);
+        const configStartMatch = content.match(/(const\s+\w+\s*(?::\s*\w+)?\s*=\s*\{|module\.exports\s*=\s*\{|export\s+default\s*\{)/);
         if (configStartMatch) {
             const insertPos = content.indexOf(configStartMatch[0]) + configStartMatch[0].length;
             content = content.slice(0, insertPos) + experimentalConfig + content.slice(insertPos);
