@@ -16,12 +16,26 @@ const path = require('path');
 const EXCLUDE_FUNCTIONS = new Set([
     // Next.js specific functions
     'generateMetadata', 'generateStaticParams', 'generateViewport',
+    // Next.js async APIs (these return Promises and should not be wrapped)
+    'headers', 'cookies', 'draftMode', 'redirect', 'notFound', 'permanentRedirect',
+    'revalidatePath', 'revalidateTag', 'unstable_cache', 'unstable_noStore',
+    // Next.js Server Actions internals
+    'useFormState', 'useFormStatus',
+    // Clerk authentication functions
+    'auth', 'currentUser', 'getAuth', 'clerkClient',
     // React component lifecycle
     'render', 'componentDidMount', 'componentWillUnmount',
+    // React hooks (should not be wrapped)
+    'use', 'useState', 'useEffect', 'useContext', 'useReducer', 'useCallback',
+    'useMemo', 'useRef', 'useImperativeHandle', 'useLayoutEffect', 'useDebugValue',
+    'useDeferredValue', 'useTransition', 'useId', 'useSyncExternalStore',
+    'useOptimistic', 'useActionState',
     // Special functions
     'constructor', 'init', 'register',
     // Common utility functions (too generic, skip)
     'toString', 'valueOf', 'toJSON',
+    // Fetch and HTTP related
+    'fetch', 'fetchAPI', 'request', 'response',
 ]);
 
 // API Route handlers (exported functions that need special handling)
@@ -56,10 +70,21 @@ module.exports = function probeLoader(source) {
     const resourcePath = this.resourcePath;
     const relativePath = path.relative(process.cwd(), resourcePath);
 
-    // Skip node_modules and probe-wrapper themselves
+    // Skip node_modules, probe-wrapper, instrumentation files
+    // Also skip directories that commonly use Next.js async APIs (headers, cookies, auth)
+    // which can break when wrapped due to async context issues
     if (resourcePath.includes('node_modules') ||
         resourcePath.includes('probe-wrapper') ||
-        resourcePath.includes('instrumentation')) {
+        resourcePath.includes('instrumentation') ||
+        resourcePath.includes('/actions/') ||     // Server Actions use async context
+        resourcePath.includes('/api/')) {         // API routes use server context
+        return source;
+    }
+
+    // Skip Next.js App Router special files (they use async context for headers/cookies)
+    const fileName = path.basename(resourcePath, path.extname(resourcePath));
+    const NEXTJS_SPECIAL_FILES = ['page', 'layout', 'loading', 'error', 'not-found', 'template', 'default', 'route', 'middleware', 'global-error'];
+    if (NEXTJS_SPECIAL_FILES.includes(fileName)) {
         return source;
     }
 
@@ -188,14 +213,27 @@ const ${func.name} = wrapUserFunction(${internalName}, '${func.name}');`;
         if (!hasImport) {
             // Check for 'use client' or 'use server' directives
             let insertPosition = 0;
-            const firstStatement = ast.program.body[0];
-            if (firstStatement &&
-                firstStatement.type === 'ExpressionStatement' &&
-                firstStatement.expression.type === 'Literal' &&
-                (firstStatement.expression.value === 'use client' ||
-                    firstStatement.expression.value === 'use server')) {
-                // Insert after the directive
-                insertPosition = firstStatement.end;
+
+            // 1. Check ast.program.directives (Babel specific)
+            if (ast.program.directives && ast.program.directives.length > 0) {
+                // Find the last directive
+                const lastDirective = ast.program.directives[ast.program.directives.length - 1];
+                insertPosition = lastDirective.end;
+            }
+            // 2. Fallback: check first statement in body (ExpressionStatement with Literal)
+            else {
+                const firstStatement = ast.program.body[0];
+                if (firstStatement &&
+                    firstStatement.type === 'ExpressionStatement' &&
+                    (firstStatement.expression.type === 'Literal' || firstStatement.expression.type === 'StringLiteral') &&
+                    (firstStatement.expression.value === 'use client' ||
+                        firstStatement.expression.value === 'use server')) {
+                    insertPosition = firstStatement.end;
+                }
+            }
+
+            if (insertPosition > 0) {
+                // Insert after the directive (ensure semicolon and newline)
                 s.appendLeft(insertPosition, `\nimport { wrapUserFunction } from '${importPath}';`);
             } else {
                 // Insert at the beginning of the file
