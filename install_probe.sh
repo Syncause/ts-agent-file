@@ -257,7 +257,7 @@ if [ "$PROJECT_TYPE" == "next" ]; then
     config.resolve.alias = config.resolve.alias || {};
     config.resolve.alias["@/probe-wrapper"] = require("path").join(__dirname, "${probeWrapperPath}");
     config.module.rules.push({
-      test: /\\\\.(tsx?|jsx?)$/,
+      test: /\\.(tsx?|jsx?)$/,
       exclude: /node_modules/,
       use: { loader: require("path").join(__dirname, "loaders", "probe-loader.js") },
     });
@@ -265,7 +265,7 @@ if [ "$PROJECT_TYPE" == "next" ]; then
 `;
     
     // Full webpack config for new additions
-    const fullWebpackConfig = `
+    const webpackConfig = `
   webpack: (config, { isServer }) => {${probeInjection}
     return config;
   },`;
@@ -308,19 +308,8 @@ if [ "$PROJECT_TYPE" == "next" ]; then
         
         if (configStartMatch) {
             const insertPos = content.indexOf(configStartMatch[0]) + configStartMatch[0].length;
-            content = content.slice(0, insertPos) + fullWebpackConfig + content.slice(insertPos);
+            content = content.slice(0, insertPos) + webpackConfig + content.slice(insertPos);
             console.log("✓ Added new webpack configuration with probe-loader");
-            modified = true;
-        }
-    }
-    
-    // Add experimental.instrumentationHook if not exists
-    if (!hasInstrumentationHook) {
-        const configStartMatch = content.match(/(const\s+\w+\s*(?::\s*\w+)?\s*=\s*\{|module\.exports\s*=\s*\{|export\s+default\s*\{)/);
-        if (configStartMatch) {
-            const insertPos = content.indexOf(configStartMatch[0]) + configStartMatch[0].length;
-            content = content.slice(0, insertPos) + experimentalConfig + content.slice(insertPos);
-            console.log("✓ Added experimental.instrumentationHook");
             modified = true;
         }
     }
