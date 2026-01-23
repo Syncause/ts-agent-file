@@ -14,12 +14,26 @@ const nodePath = require('path');
 const EXCLUDE_FUNCTIONS = new Set([
     // Next.js specific functions
     'generateMetadata', 'generateStaticParams', 'generateViewport',
+    // Next.js async APIs (these return Promises and should not be wrapped)
+    'headers', 'cookies', 'draftMode', 'redirect', 'notFound', 'permanentRedirect',
+    'revalidatePath', 'revalidateTag', 'unstable_cache', 'unstable_noStore',
+    // Next.js Server Actions internals
+    'useFormState', 'useFormStatus',
+    // Clerk authentication functions
+    'auth', 'currentUser', 'getAuth', 'clerkClient',
     // React component lifecycle
     'render', 'componentDidMount', 'componentWillUnmount',
+    // React hooks (should not be wrapped)
+    'use', 'useState', 'useEffect', 'useContext', 'useReducer', 'useCallback',
+    'useMemo', 'useRef', 'useImperativeHandle', 'useLayoutEffect', 'useDebugValue',
+    'useDeferredValue', 'useTransition', 'useId', 'useSyncExternalStore',
+    'useOptimistic', 'useActionState',
     // Special functions
     'constructor', 'init', 'register',
     // Common utility functions (too generic, skip)
     'toString', 'valueOf', 'toJSON',
+    // Fetch and HTTP related
+    'fetch', 'fetchAPI', 'request', 'response',
 ]);
 
 // API Route handlers (exported functions that need special handling)
@@ -62,7 +76,7 @@ function hasMatch(patterns, path) {
     return patternArr.some(p => matches(p, path));
 }
 
-module.exports = function(api, options = {}) {
+module.exports = function (api, options = {}) {
     const t = api.types;
 
     // ----------------------------------------------------
@@ -110,7 +124,7 @@ module.exports = function(api, options = {}) {
 
         // 3. Include (Allow)
         if (include && include.length > 0) {
-             if (!hasMatch(include, filename)) return false;
+            if (!hasMatch(include, filename)) return false;
         }
 
         return true;
@@ -121,6 +135,14 @@ module.exports = function(api, options = {}) {
             Program: {
                 enter(path, state) {
                     const resourcePath = state.filename || (state.file && state.file.opts.filename);
+
+                    // Logic to exclude Next.js special files
+                    // const fileName = nodePath.basename(resourcePath, nodePath.extname(resourcePath));
+                    // const NEXTJS_SPECIAL_FILES = ['page', 'layout', 'loading', 'error', 'not-found', 'template', 'default', 'route', 'middleware', 'global-error'];
+                    // if (NEXTJS_SPECIAL_FILES.includes(fileName)) {
+                    //     state.skipProcessing = true;
+                    //     return;
+                    // }
 
                     if (!shouldProcess(resourcePath)) {
                         state.skipProcessing = true;

@@ -1,4 +1,21 @@
 {
-  "presets": ["next/babel"],
-  "plugins": ["./babel-plugin-probe"]
+  "presets": [
+    "next/babel"
+  ],
+  "plugins": [
+    [
+      "./babel-plugin-probe",
+      {
+        "include": [
+          "/app/"
+        ],
+        "exclude": [
+          "/node_modules/",
+          "/.next/",
+          "/instrumentation/",
+          "/probe-wrapper/"
+        ]
+      }
+    ]
+  ]
 }
