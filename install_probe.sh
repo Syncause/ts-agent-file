@@ -19,7 +19,7 @@ echo_error() {
 }
 
 # --- Configuration ---
-TAG="${1:-v1.2.0}"
+TAG="${1:-v1.3.0}"
 GITHUB_BASE="https://raw.githubusercontent.com/Syncause/ts-agent-file/${TAG}"
 echo_step "Using version tag: $TAG"
 CORE_DEPS=(
