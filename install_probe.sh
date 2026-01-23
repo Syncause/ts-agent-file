@@ -19,7 +19,7 @@ echo_error() {
 }
 
 # --- Configuration ---
-TAG="${1:-v1.1.0}"
+TAG="${1:-v1.2.0}"
 GITHUB_BASE="https://raw.githubusercontent.com/Syncause/ts-agent-file/${TAG}"
 echo_step "Using version tag: $TAG"
 CORE_DEPS=(
@@ -137,11 +137,13 @@ echo_step "Target directory for probe files: $TARGET_DIR"
 
 case $PROJECT_TYPE in
     "next")
-        echo_step "Downloading Next.js instrumentation files..."
+        echo_step "Downloading Next.js instrumentation files and Babel config..."
         curl -sL "$GITHUB_BASE/instrumentation.ts" -o "$TARGET_DIR/instrumentation.ts"
         curl -sL "$GITHUB_BASE/instrumentation.node.next.ts" -o "$TARGET_DIR/instrumentation.node.ts"
         curl -sL "$GITHUB_BASE/probe-wrapper.ts" -o "$TARGET_DIR/probe-wrapper.ts"
-        mkdir -p loaders && curl -sL "$GITHUB_BASE/probe-loader.js" -o loaders/probe-loader.js
+        # Download Babel config to root
+        curl -sL "$GITHUB_BASE/.babelrc" -o ".babelrc"
+        curl -sL "$GITHUB_BASE/babel-plugin-probe.js" -o "babel-plugin-probe.js"
         ;;
     "ts")
         echo_step "Downloading TypeScript instrumentation files..."
@@ -169,8 +171,8 @@ if [ "$PROJECT_TYPE" == "next" ]; then
     $DEV_INSTALL_CMD "${NEXT_DEPS[@]}"
 fi
 
-# 5. Configure tsconfig.json for @/probe-wrapper path alias (TypeScript/Next.js projects)
-if [ "$PROJECT_TYPE" == "ts" ] || [ "$PROJECT_TYPE" == "next" ]; then
+# 5. Configure tsconfig.json for @/probe-wrapper path alias (TypeScript projects only - Next.js uses Babel/Relative)
+if [ "$PROJECT_TYPE" == "ts" ]; then
     echo_step "Configuring tsconfig.json with @/probe-wrapper path alias..."
     
     node -e '
