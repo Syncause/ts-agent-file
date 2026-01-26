@@ -19,9 +19,11 @@ echo_error() {
 }
 
 # --- Configuration ---
-TAG="${1:-v1.5.0}"
+TAG="${1:-v1.6.0}"
 GITHUB_BASE="https://raw.githubusercontent.com/Syncause/ts-agent-file/${TAG}"
 echo_step "Using version tag: $TAG"
+# Default version tag
+DEFAULT_TAG="v1.6.0"
 CORE_DEPS=(
     "@opentelemetry/sdk-node"
     "@opentelemetry/api"

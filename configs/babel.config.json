@@ -1,0 +1,15 @@
+{
+    "presets": [
+        ["@babel/preset-env", { "targets": { "node": "current" } }],
+        "@babel/preset-typescript"
+    ],
+    "plugins": [
+        ["./babel-plugin-test-probe.js", {
+            "runtimePath": "./test-probe-runtime",
+            "debug": false,
+            "includeLocation": true,
+            "wrapAnonymous": true,
+            "exclude": ["/node_modules/", "/.git/", "/dist/", "/build/"]
+        }]
+    ]
+}

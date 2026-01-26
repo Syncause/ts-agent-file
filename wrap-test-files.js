@@ -36,6 +36,7 @@ const EXCLUDE_PATTERNS = [
     /node_modules/,
     /instrumentation/,
     /probe-wrapper/,
+    /test-probe-runtime/,
     /\.test\./,
     /\.spec\./,
     /\.d\.ts$/,
@@ -128,6 +129,49 @@ function transformTestFile(code, filePath, outputDir) {
 
     const importsToWrap = [];
     let hasWrapImport = false;
+    let internalWrappedCount = 0;
+
+    // NEW: Apply babel-plugin-test-probe visitor to wrap internal functions and methods
+    try {
+        const testProbePlugin = require('./babel-plugin-test-probe');
+        const runtimePath = getProbeWrapperImport(filePath, outputDir);
+
+        const pluginApi = {
+            types: t,
+            cache: { using: () => { } }
+        };
+
+        const pluginOptions = {
+            runtimePath: 'test-probe-runtime', // Use the module name, let resolution handle it? No, need path.
+            // Wait, babel-plugin logic inserts import based on runtimePath.
+            // But we might conflict with existing wrap-test-files logic if both insert imports.
+            // wrap-test-files uses `probe-wrapper-test`, plugin uses `test-probe-runtime`.
+            // Let's use `test-probe-runtime` relative path which matches what `wrap-test-files` would find if it looked for it.
+            // Actually, let's look at `test-probe-runtime.ts` location. It's next to plugin.
+            // So relative path from test file to `test-probe-runtime` should be same structure.
+            runtimePath: getProbeWrapperImport(filePath, outputDir).replace('probe-wrapper-test', 'test-probe-runtime'),
+            includeLocation: true,
+            debug: false
+        };
+
+        const pluginInstance = testProbePlugin(pluginApi, pluginOptions);
+
+        const state = {
+            filename: filePath,
+            opts: pluginOptions,
+            file: { opts: { filename: filePath } },
+            cwd: process.cwd(),
+            wrappedFunctions: [],
+            needsImport: false
+        };
+
+        // Run plugin visitor
+        traverse(ast, pluginInstance.visitor, undefined, state);
+        internalWrappedCount = state.wrappedFunctions.length;
+
+    } catch (e) {
+        console.warn(`[WARN] Failed to apply probe plugin to ${filePath}:`, e.message);
+    }
 
     // First pass: collect imports to wrap
     traverse(ast, {
@@ -169,7 +213,7 @@ function transformTestFile(code, filePath, outputDir) {
         },
     });
 
-    if (importsToWrap.length === 0) {
+    if (importsToWrap.length === 0 && internalWrappedCount === 0) {
         console.log(`[SKIP] ${filePath}: No wrappable imports found`);
         return code;
     }

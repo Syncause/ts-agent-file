@@ -1,0 +1,43 @@
+{
+  "timestamp": "2026-01-23T09:59:26.145Z",
+  "spans": [
+    {
+      "traceId": "grgow7n47fsd6ikkfr55d7",
+      "spanId": "opfhlxyi15863hvm40rr89",
+      "name": "outerFunction",
+      "location": "test-probe-demo.js:3",
+      "startTime": 1769162366143,
+      "endTime": 1769162366144,
+      "duration": 1,
+      "status": "ok",
+      "args": [
+        "5"
+      ],
+      "returnValue": "121"
+    },
+    {
+      "traceId": "grgow7n47fsd6ikkfr55d7",
+      "spanId": "pvxioee396fdma8gat5uww",
+      "parentSpanId": "opfhlxyi15863hvm40rr89",
+      "name": "middleFunction",
+      "location": "test-probe-demo.js:8",
+      "startTime": 1769162366144,
+      "endTime": 1769162366144,
+      "duration": 0,
+      "status": "ok",
+      "args": [
+        "10"
+      ],
+      "callerName": "outerFunction",
+      "returnValue": "121"
+    }
+  ],
+  "traces": [
+    {
+      "traceId": "grgow7n47fsd6ikkfr55d7",
+      "spanCount": 2,
+      "startTime": 1769162366143,
+      "callTree": "outerFunction (1ms) args: [5] => 121\n`-middleFunction (0ms) args: [10] => 121"
+    }
+  ]
+}

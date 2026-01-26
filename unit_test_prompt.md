@@ -11,8 +11,14 @@
 ```bash
 mkdir -p .syncause/scripts
 
-curl -o .syncause/probe-wrapper-test.ts https://raw.githubusercontent.com/Syncause/ts-agent-file/v1.0.0/probe-wrapper-test.ts
-curl -o .syncause/scripts/wrap-test-files.js https://raw.githubusercontent.com/Syncause/ts-agent-file/v1.0.0/wrap-test-files.js
+# 1. 运行时 (Runtime) - 处理 span 记录和日志写入
+curl -o .syncause/test-probe-runtime.ts https://raw.githubusercontent.com/Syncause/ts-agent-file/v1.6.0/test-probe-runtime.ts
+
+# 2. Babel 插件 (Plugin) - 负责 AST 分析和内部函数插桩
+curl -o .syncause/scripts/babel-plugin-test-probe.js https://raw.githubusercontent.com/Syncause/ts-agent-file/v1.6.0/babel-plugin-test-probe.js
+
+# 3. 转换脚本 (Wrapper Script) - 集成插件，批量处理测试文件
+curl -o .syncause/scripts/wrap-test-files.js https://raw.githubusercontent.com/Syncause/ts-agent-file/v1.6.0/wrap-test-files.js
 ```
 
 ### 2. 安装依赖
@@ -89,12 +95,15 @@ cat .syncause/span.log | jq .
 #!/bin/bash
 set -e
 
-GITHUB_BASE="https://raw.githubusercontent.com/Syncause/ts-agent-file/v1.0.0"
+GITHUB_BASE="https://raw.githubusercontent.com/Syncause/ts-agent-file/v1.6.0"
 SOURCE_DIR="${1:-__tests__}"
 OUTPUT_DIR="${2:-__tests_traced__}"
 
 mkdir -p .syncause/scripts
-curl -sL -o .syncause/probe-wrapper-test.ts "$GITHUB_BASE/probe-wrapper-test.ts"
+
+# 下载所有组件
+curl -sL -o .syncause/test-probe-runtime.ts "$GITHUB_BASE/test-probe-runtime.ts"
+curl -sL -o .syncause/scripts/babel-plugin-test-probe.js "$GITHUB_BASE/babel-plugin-test-probe.js"
 curl -sL -o .syncause/scripts/wrap-test-files.js "$GITHUB_BASE/wrap-test-files.js"
 
 npm install -D @babel/parser @babel/traverse @babel/generator @babel/types 2>/dev/null || true
@@ -113,13 +122,17 @@ echo "Span records: $(wc -l < .syncause/span.log)"
 
 | 文件 | 用途 |
 |------|------|
-| `.syncause/probe-wrapper-test.ts` | 测试版 wrapper，生成 span.log |
-| `.syncause/scripts/wrap-test-files.js` | 自动转换测试文件，wrap 业务函数 |
-| `.syncause/span.log` | span 日志输出（CachedSpanRec 格式）|
+| 文件 | 用途 |
+|------|------|
+| `.syncause/test-probe-runtime.ts` | 探针运行时，负责记录 span 和写入日志 |
+| `.syncause/scripts/babel-plugin-test-probe.js` | Babel 插件，用于分析和修改 AST |
+| `.syncause/scripts/wrap-test-files.js` | 转换脚本，调用插件处理所有测试文件 |
+| `.syncause/span.log` | 生成的函数调用 trace 日志 |
 
 ## 特性
 
 - ✅ 自动检测 tsconfig.json 路径别名
 - ✅ wrap 所有相对导入 `./`、`../`
-- ✅ 使用相对路径导入 probe-wrapper-test
+- ✅ **[NEW]** 自动插桩测试文件内部定义的函数（支持层层调用追踪）
+- ✅ 使用相对路径导入 test-probe-runtime
 - ✅ 支持 Jest、Vitest、Mocha 等所有测试框架
