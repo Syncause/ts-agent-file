@@ -48,7 +48,43 @@ node .syncause/scripts/wrap-test-files.js __tests__ __tests_traced__
 node .syncause/scripts/wrap-test-files.js test test_traced
 ```
 
-### 5. 运行测试
+### 5. 配置 Jest（必须）
+
+**重要**: 需要将 traced 测试目录添加到 `jest.config.js` 的 `roots` 配置中，否则 Jest 找不到测试文件。
+
+```bash
+# 检查当前 jest.config.js 的 roots 配置
+grep -n "roots" jest.config.js
+
+# 手动修改 jest.config.js，添加 traced 目录：
+# roots: ['<rootDir>/__tests__', '<rootDir>/__tests_traced__']
+```
+
+或者使用脚本自动添加：
+
+```bash
+node -e '
+const fs = require("fs");
+const configPath = "jest.config.js";
+if (fs.existsSync(configPath)) {
+  let content = fs.readFileSync(configPath, "utf8");
+  const tracedDir = "__tests_traced__";
+  if (!content.includes(tracedDir)) {
+    // 在 roots 数组中添加 traced 目录
+    content = content.replace(
+      /roots:\s*\[\s*([^\]]+)\s*\]/,
+      (match, inner) => `roots: [${inner.trimEnd()}, "<rootDir>/${tracedDir}"]`
+    );
+    fs.writeFileSync(configPath, content);
+    console.log("✓ Added " + tracedDir + " to jest.config.js roots");
+  } else {
+    console.log("✓ " + tracedDir + " already in jest.config.js");
+  }
+}
+'
+```
+
+### 6. 运行测试
 
 **Jest:**
 ```bash
@@ -110,6 +146,23 @@ npm install -D @babel/parser @babel/traverse @babel/generator @babel/types 2>/de
 
 node .syncause/scripts/wrap-test-files.js "$SOURCE_DIR" "$OUTPUT_DIR"
 
+# 自动配置 jest.config.js（添加 traced 目录到 roots）
+if [ -f "jest.config.js" ]; then
+  node -e "
+    const fs = require('fs');
+    let content = fs.readFileSync('jest.config.js', 'utf8');
+    const tracedDir = '$OUTPUT_DIR';
+    if (!content.includes(tracedDir)) {
+      content = content.replace(
+        /roots:\s*\[\s*([^\]]+)\s*\]/,
+        (m, inner) => \`roots: [\${inner.trimEnd()}, '<rootDir>/' + tracedDir + '']\`
+      );
+      fs.writeFileSync('jest.config.js', content);
+      console.log('✓ Added ' + tracedDir + ' to jest.config.js roots');
+    }
+  "
+fi
+
 rm -f .syncause/span.log
 npx jest "$OUTPUT_DIR" --forceExit || npx vitest run "$OUTPUT_DIR" || npx mocha "$OUTPUT_DIR/**/*.test.ts"
 
@@ -134,5 +187,6 @@ echo "Span records: $(wc -l < .syncause/span.log)"
 - ✅ 自动检测 tsconfig.json 路径别名
 - ✅ wrap 所有相对导入 `./`、`../`
 - ✅ **[NEW]** 自动插桩测试文件内部定义的函数（支持层层调用追踪）
+- ✅ **[NEW]** 自动配置 jest.config.js，添加 traced 目录到 roots
 - ✅ 使用相对路径导入 test-probe-runtime
 - ✅ 支持 Jest、Vitest、Mocha 等所有测试框架
