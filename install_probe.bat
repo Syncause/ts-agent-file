@@ -16,49 +16,74 @@ REM Default version tag
 set "DEFAULT_TAG=v1.7.0"
 
 REM --- 1. Detect Package Manager ---
+REM Check for pnpm
 if exist "pnpm-lock.yaml" (
-    set "PKG_MANAGER=pnpm"
-    REM Check if this is a pnpm workspace
-    if exist "pnpm-workspace.yaml" (
-        echo [34m==^>[0m Detected pnpm workspace
-        set "INSTALL_CMD=pnpm add -w"
-        set "DEV_INSTALL_CMD=pnpm add -D -w"
-    ) else (
-        findstr /C:"\"workspaces\"" package.json >nul 2>&1
-        if !errorlevel! equ 0 (
+    where pnpm >nul 2>&1
+    if !errorlevel! equ 0 (
+        set "PKG_MANAGER=pnpm"
+        REM Check if this is a pnpm workspace
+        if exist "pnpm-workspace.yaml" (
             echo [34m==^>[0m Detected pnpm workspace
             set "INSTALL_CMD=pnpm add -w"
             set "DEV_INSTALL_CMD=pnpm add -D -w"
         ) else (
-            set "INSTALL_CMD=pnpm add"
-            set "DEV_INSTALL_CMD=pnpm add -D"
+            findstr /C:"\"workspaces\"" package.json >nul 2>&1
+            if !errorlevel! equ 0 (
+                echo [34m==^>[0m Detected pnpm workspace
+                set "INSTALL_CMD=pnpm add -w"
+                set "DEV_INSTALL_CMD=pnpm add -D -w"
+            ) else (
+                set "INSTALL_CMD=pnpm add"
+                set "DEV_INSTALL_CMD=pnpm add -D"
+            )
         )
+        goto :pkg_manager_detected
+    ) else (
+        echo [33mWARNING:[0m pnpm-lock.yaml found but pnpm is not installed. Trying other package managers...
     )
-) else if exist "yarn.lock" (
-    set "PKG_MANAGER=yarn"
-    REM Detect Yarn version
-    for /f "tokens=1 delims=." %%v in ('yarn --version 2^>nul') do set "YARN_MAJOR=%%v"
-    
-    REM Check if this is a yarn workspace
-    findstr /C:"\"workspaces\"" package.json >nul 2>&1
+)
+
+REM Check for yarn
+if exist "yarn.lock" (
+    where yarn >nul 2>&1
     if !errorlevel! equ 0 (
-        echo [34m==^>[0m Detected Yarn workspace ^(Yarn v!YARN_MAJOR!^)
-        if "!YARN_MAJOR!"=="1" (
-            set "INSTALL_CMD=yarn add --ignore-workspace-root-check"
-            set "DEV_INSTALL_CMD=yarn add -D --ignore-workspace-root-check"
+        set "PKG_MANAGER=yarn"
+        REM Detect Yarn version
+        for /f "tokens=1 delims=." %%v in ('yarn --version 2^>nul') do set "YARN_MAJOR=%%v"
+        
+        REM Check if this is a yarn workspace
+        findstr /C:"\"workspaces\"" package.json >nul 2>&1
+        if !errorlevel! equ 0 (
+            echo [34m==^>[0m Detected Yarn workspace ^(Yarn v!YARN_MAJOR!^)
+            if "!YARN_MAJOR!"=="1" (
+                set "INSTALL_CMD=yarn add --ignore-workspace-root-check"
+                set "DEV_INSTALL_CMD=yarn add -D --ignore-workspace-root-check"
+            ) else (
+                set "INSTALL_CMD=yarn add"
+                set "DEV_INSTALL_CMD=yarn add -D"
+            )
         ) else (
             set "INSTALL_CMD=yarn add"
             set "DEV_INSTALL_CMD=yarn add -D"
         )
+        goto :pkg_manager_detected
     ) else (
-        set "INSTALL_CMD=yarn add"
-        set "DEV_INSTALL_CMD=yarn add -D"
+        echo [33mWARNING:[0m yarn.lock found but yarn is not installed. Trying other package managers...
     )
-) else (
+)
+
+REM Fallback to npm (always available with Node.js)
+where npm >nul 2>&1
+if !errorlevel! equ 0 (
     set "PKG_MANAGER=npm"
     set "INSTALL_CMD=npm install"
     set "DEV_INSTALL_CMD=npm install -D"
+) else (
+    echo [31mERROR:[0m No package manager found. Please install npm, yarn, or pnpm.
+    exit /b 1
 )
+
+:pkg_manager_detected
 echo [34m==^>[0m Using package manager: %PKG_MANAGER%
 
 REM --- 2. Detect Project Type ---
