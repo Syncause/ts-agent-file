@@ -5,17 +5,16 @@
  * Universal version - works with any Node.js/TypeScript project
  * 
  * Features:
- * - Auto-detects tsconfig.json path aliases
- * - Wraps all relative imports (./xxx, ../xxx)
- * - Wraps all alias imports (@/, ~/, #/)
- * - Uses relative path for probe-wrapper-test import
+ * - Uses babel-plugin-test-probe to wrap ALL functions
+ * - Supports js, ts, jsx, tsx test files
+ * - Auto-imports test-probe-runtime for span tracking
  * 
  * Usage:
- *   node wrap-test-files.js <source-dir> <output-dir> [probe-wrapper-path]
+ *   node wrap-test-files.js <source-dir> <output-dir>
  * 
  * Example:
  *   node wrap-test-files.js __tests__ __tests_traced__
- *   node wrap-test-files.js test test_traced ../.syncause/probe-wrapper-test
+ *   node wrap-test-files.js test test_traced
  */
 
 const fs = require('fs');
@@ -24,9 +23,6 @@ const parser = require('@babel/parser');
 const traverse = require('@babel/traverse').default;
 const generate = require('@babel/generator').default;
 const t = require('@babel/types');
-
-// Default probe-wrapper-test location (relative to output directory)
-let PROBE_WRAPPER_PATH = '../.syncause/probe-wrapper-test';
 
 // Detected path aliases from tsconfig.json
 let PATH_ALIASES = [];
@@ -107,12 +103,12 @@ function shouldWrapImport(importPath) {
 }
 
 /**
- * Calculate relative path from test file to probe-wrapper
+ * Calculate relative path from test file to test-probe-runtime
  */
-function getProbeWrapperImport(testFilePath, outputDir) {
+function getRuntimeImportPath(testFilePath, outputDir) {
     const testDir = path.dirname(testFilePath);
     const relativeToOutput = path.relative(path.join(outputDir, testDir), '.');
-    return path.join(relativeToOutput, '.syncause', 'probe-wrapper-test').replace(/\\/g, '/');
+    return path.join(relativeToOutput, '.syncause', 'test-probe-runtime').replace(/\\/g, '/');
 }
 
 function transformTestFile(code, filePath, outputDir) {
@@ -127,14 +123,15 @@ function transformTestFile(code, filePath, outputDir) {
         return code;
     }
 
-    const importsToWrap = [];
-    let hasWrapImport = false;
-    let internalWrappedCount = 0;
+    let wrappedCount = 0;
 
-    // NEW: Apply babel-plugin-test-probe visitor to wrap internal functions and methods
+    // Apply babel-plugin-test-probe visitor to wrap ALL functions
+    // This replaces the old wrapUserFunction approach
     try {
         const testProbePlugin = require('./babel-plugin-test-probe');
-        const runtimePath = getProbeWrapperImport(filePath, outputDir);
+
+        // Calculate relative path to test-probe-runtime
+        const runtimePath = getRuntimeImportPath(filePath, outputDir);
 
         const pluginApi = {
             types: t,
@@ -142,16 +139,10 @@ function transformTestFile(code, filePath, outputDir) {
         };
 
         const pluginOptions = {
-            runtimePath: 'test-probe-runtime', // Use the module name, let resolution handle it? No, need path.
-            // Wait, babel-plugin logic inserts import based on runtimePath.
-            // But we might conflict with existing wrap-test-files logic if both insert imports.
-            // wrap-test-files uses `probe-wrapper-test`, plugin uses `test-probe-runtime`.
-            // Let's use `test-probe-runtime` relative path which matches what `wrap-test-files` would find if it looked for it.
-            // Actually, let's look at `test-probe-runtime.ts` location. It's next to plugin.
-            // So relative path from test file to `test-probe-runtime` should be same structure.
-            runtimePath: getProbeWrapperImport(filePath, outputDir).replace('probe-wrapper-test', 'test-probe-runtime'),
+            runtimePath: runtimePath,
             includeLocation: true,
-            debug: false
+            debug: false,
+            wrapAnonymous: true
         };
 
         const pluginInstance = testProbePlugin(pluginApi, pluginOptions);
@@ -167,119 +158,22 @@ function transformTestFile(code, filePath, outputDir) {
 
         // Run plugin visitor
         traverse(ast, pluginInstance.visitor, undefined, state);
-        internalWrappedCount = state.wrappedFunctions.length;
+        wrappedCount = state.wrappedFunctions.length;
+
+        if (wrappedCount === 0) {
+            console.log(`[SKIP] ${filePath}: No functions to wrap`);
+            return code;
+        }
+
+        console.log(`[WRAP] ${filePath}: Wrapped ${wrappedCount} functions: ${state.wrappedFunctions.slice(0, 5).join(', ')}${state.wrappedFunctions.length > 5 ? '...' : ''}`);
 
     } catch (e) {
         console.warn(`[WARN] Failed to apply probe plugin to ${filePath}:`, e.message);
-    }
-
-    // First pass: collect imports to wrap
-    traverse(ast, {
-        ImportDeclaration(nodePath) {
-            const importSource = nodePath.node.source.value;
-
-            // Check if already importing wrapUserFunction
-            if (importSource.includes('probe-wrapper') || importSource.includes('wrapUserFunction')) {
-                hasWrapImport = true;
-                return;
-            }
-
-            if (shouldWrapImport(importSource)) {
-                const specifiers = nodePath.node.specifiers;
-                specifiers.forEach(spec => {
-                    if (spec.type === 'ImportSpecifier') {
-                        const localName = spec.local.name;
-                        const importedName = spec.imported.name || spec.imported.value;
-
-                        importsToWrap.push({
-                            localName,
-                            importedName,
-                            source: importSource,
-                            isDefault: false,
-                        });
-                    } else if (spec.type === 'ImportDefaultSpecifier') {
-                        const localName = spec.local.name;
-
-                        importsToWrap.push({
-                            localName,
-                            importedName: 'default',
-                            source: importSource,
-                            isDefault: true,
-                        });
-                    }
-                    // Skip ImportNamespaceSpecifier (import * as xxx)
-                });
-            }
-        },
-    });
-
-    if (importsToWrap.length === 0 && internalWrappedCount === 0) {
-        console.log(`[SKIP] ${filePath}: No wrappable imports found`);
         return code;
-    }
-
-    // Second pass: transform the AST
-    traverse(ast, {
-        ImportDeclaration(nodePath) {
-            const importSource = nodePath.node.source.value;
-
-            if (shouldWrapImport(importSource)) {
-                // Rename imported bindings to _unwrapped_xxx
-                nodePath.node.specifiers.forEach(spec => {
-                    if (spec.type === 'ImportSpecifier' || spec.type === 'ImportDefaultSpecifier') {
-                        const originalName = spec.local.name;
-                        spec.local.name = `_unwrapped_${originalName}`;
-                    }
-                });
-            }
-        },
-    });
-
-    // Generate wrapped variable declarations
-    const wrapStatements = importsToWrap.map(imp => {
-        return t.variableDeclaration('const', [
-            t.variableDeclarator(
-                t.identifier(imp.localName),
-                t.callExpression(
-                    t.identifier('wrapUserFunction'),
-                    [
-                        t.identifier(`_unwrapped_${imp.localName}`),
-                        t.stringLiteral(imp.localName),
-                    ]
-                )
-            ),
-        ]);
-    });
-
-    // Calculate relative path to probe-wrapper-test
-    const probeWrapperPath = getProbeWrapperImport(filePath, outputDir);
-
-    // Add wrapUserFunction import if not present
-    if (!hasWrapImport) {
-        const wrapImport = t.importDeclaration(
-            [t.importSpecifier(t.identifier('wrapUserFunction'), t.identifier('wrapUserFunction'))],
-            t.stringLiteral(probeWrapperPath)
-        );
-        ast.program.body.unshift(wrapImport);
-    }
-
-    // Insert wrap statements after imports
-    let lastImportIndex = -1;
-    for (let i = 0; i < ast.program.body.length; i++) {
-        if (ast.program.body[i].type === 'ImportDeclaration') {
-            lastImportIndex = i;
-        }
-    }
-
-    if (lastImportIndex >= 0) {
-        ast.program.body.splice(lastImportIndex + 1, 0, ...wrapStatements);
     }
 
     // Generate output code
     const output = generate(ast, { retainLines: true }, code);
-
-    console.log(`[WRAP] ${filePath}: Wrapped ${importsToWrap.length} functions: ${importsToWrap.map(i => i.localName).join(', ')}`);
-
     return output.code;
 }
 
