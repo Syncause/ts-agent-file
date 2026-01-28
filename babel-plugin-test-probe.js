@@ -194,7 +194,7 @@ function getFunctionName(path) {
 function getLocationInfo(path, state) {
     const loc = path.node.loc;
     const filename = state.filename || 'unknown';
-    const relativePath = nodePath.relative(process.cwd(), filename);
+    const relativePath = nodePath.relative(process.cwd(), filename).replace(/\\/g, '/');
 
     if (loc) {
         return `${relativePath}:${loc.start.line}:${loc.start.column}`;
@@ -237,14 +237,17 @@ module.exports = function (api, options = {}) {
     function shouldProcessFile(filename) {
         if (!filename) return false;
 
+        // Normalize filename to use forward slashes for consistent matching
+        const normalizedFilename = filename.replace(/\\/g, '/');
+
         // Check extension
-        if (test && !matches(test, filename)) return false;
+        if (test && !matches(test, normalizedFilename)) return false;
 
         // Check exclude patterns
-        if (hasMatch(exclude, filename)) return false;
+        if (hasMatch(exclude, normalizedFilename)) return false;
 
         // Check include patterns (if specified, file must match)
-        if (include && include.length > 0 && !hasMatch(include, filename)) {
+        if (include && include.length > 0 && !hasMatch(include, normalizedFilename)) {
             return false;
         }
 
@@ -315,7 +318,7 @@ module.exports = function (api, options = {}) {
                         return;
                     }
 
-                    const relativePath = nodePath.relative(process.cwd(), filename);
+                    const relativePath = nodePath.relative(process.cwd(), filename).replace(/\\/g, '/');
 
                     if (debug) {
                         console.log(`[test-probe] Processing: ${relativePath}`);

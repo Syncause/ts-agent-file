@@ -113,18 +113,21 @@ module.exports = function (api, options = {}) {
     function shouldProcess(filename) {
         if (!filename) return false;
 
+        // Normalize filename to use forward slashes for consistent matching
+        const normalizedFilename = filename.replace(/\\/g, '/');
+
         // If explicitly disabled (e.g. client-side), skip
         if (finalIsServer === false) return false;
 
         // 1. Test (Extension)
-        if (test && !matches(test, filename)) return false;
+        if (test && !matches(test, normalizedFilename)) return false;
 
         // 2. Exclude (Block)
-        if (exclude && hasMatch(exclude, filename)) return false;
+        if (exclude && hasMatch(exclude, normalizedFilename)) return false;
 
         // 3. Include (Allow)
         if (include && include.length > 0) {
-            if (!hasMatch(include, filename)) return false;
+            if (!hasMatch(include, normalizedFilename)) return false;
         }
 
         return true;
@@ -149,7 +152,7 @@ module.exports = function (api, options = {}) {
                         return;
                     }
 
-                    const relativePath = nodePath.relative(process.cwd(), resourcePath);
+                    const relativePath = nodePath.relative(process.cwd(), resourcePath).replace(/\\/g, '/');
                     console.log(`[babel-plugin-probe] Processing: ${relativePath}`);
 
                     state.wrappedFunctions = [];
@@ -221,7 +224,7 @@ module.exports = function (api, options = {}) {
                         }
 
                         const resourcePath = state.filename || (state.file && state.file.opts.filename);
-                        const relativePath = resourcePath ? nodePath.relative(process.cwd(), resourcePath) : 'unknown';
+                        const relativePath = resourcePath ? nodePath.relative(process.cwd(), resourcePath).replace(/\\/g, '/') : 'unknown';
                         console.log(`[babel-plugin-probe] Wrapped functions in ${relativePath}: ${state.wrappedFunctions.join(', ')}`);
                     }
                 }
