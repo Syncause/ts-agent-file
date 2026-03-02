@@ -216,9 +216,78 @@ if [ "$PROJECT_TYPE" == "ts" ]; then
     '
 fi
 
-# 6. Configure next.config.js for Next.js projects (REMOVED - Now using Babel)
+# 6. Configure next.config for Next.js projects - Add serverExternalPackages to prevent Webpack bundling native modules
 if [ "$PROJECT_TYPE" == "next" ]; then
-    echo_step "Next.js project detected. Using Babel-based instrumentation (no next.config.js modification needed)."
+    echo_step "Configuring next.config for Next.js project (adding serverExternalPackages)..."
+
+    node -e '
+const fs = require("fs");
+const path = require("path");
+
+// Packages that must NOT be bundled by webpack (native addons or server-only)
+const externalPackages = [
+    "ws",
+    "bufferutil",
+    "utf-8-validate",
+    "@opentelemetry/sdk-node",
+    "@opentelemetry/api",
+    "@opentelemetry/auto-instrumentations-node",
+    "@opentelemetry/sdk-metrics",
+    "@opentelemetry/sdk-trace-node",
+    "@opentelemetry/core"
+];
+
+// Try next.config.ts first, then .js, then .mjs
+const configFiles = ["next.config.ts", "next.config.js", "next.config.mjs"];
+let configFile = null;
+for (const f of configFiles) {
+    if (fs.existsSync(f)) { configFile = f; break; }
+}
+
+if (!configFile) {
+    console.log("Warning: No next.config file found. Creating next.config.ts with serverExternalPackages.");
+    const newConfig = `import type { NextConfig } from "next";
+
+const nextConfig: NextConfig = {
+  serverExternalPackages: ${JSON.stringify(externalPackages, null, 4)},
+};
+
+export default nextConfig;
+`;
+    fs.writeFileSync("next.config.ts", newConfig);
+    console.log("✓ Created next.config.ts with serverExternalPackages");
+} else {
+    let content = fs.readFileSync(configFile, "utf8");
+
+    // If serverExternalPackages already set, skip
+    if (content.includes("serverExternalPackages")) {
+        console.log("✓ serverExternalPackages already configured in " + configFile + ", skipping.");
+    } else {
+        // Insert serverExternalPackages before the closing of the config object
+        // Strategy: find the last }; or } before export default
+        const packagesStr = "  serverExternalPackages: " + JSON.stringify(externalPackages, null, 2).replace(/\n/g, "\n  ") + ",";
+
+        // Try to inject before the closing brace of the config object
+        // Match patterns like: }; or }  (followed by newline then export)
+        const insertPattern = /(const\s+\w+\s*(?::\s*NextConfig\s*)?\s*=\s*\{[\s\S]*?)(\s*\};)/;
+        const match = content.match(insertPattern);
+
+        if (match) {
+            content = content.replace(insertPattern, (_, before, end) => {
+                // Check if the config object body has content
+                const body = before.replace(/const\s+\w+\s*(?::\s*NextConfig\s*)?\s*=\s*\{/, "").trim();
+                const separator = body.length > 0 ? "\n" : "";
+                return before + separator + packagesStr + "\n" + end;
+            });
+            fs.writeFileSync(configFile, content);
+            console.log("✓ Added serverExternalPackages to " + configFile);
+        } else {
+            console.log("Warning: Could not automatically update " + configFile + ". Please add serverExternalPackages manually:");
+            console.log(packagesStr);
+        }
+    }
+}
+'
 fi
 
 
