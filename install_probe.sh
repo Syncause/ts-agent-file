@@ -342,7 +342,7 @@ if (projectType === "next") {
         if (pkg.scripts[key] && !pkg.scripts[key].includes("--require")) {
             const cmd = pkg.scripts[key];
             if (cmd.startsWith("node ")) {
-                pkg.scripts[key] = cmd.replace(/^node\s+/, "node --require " + baseDir + "instrumentation.js ");
+                pkg.scripts[key] = cmd.replace(/^node\s+/, "node --require " + baseDir + "instrumentation.node.js ");
                 patched = true; break;
             }
         }
@@ -351,7 +351,7 @@ if (projectType === "next") {
     if (!patched) {
         const fallbackKey = pkg.scripts.dev !== undefined ? "dev" : (pkg.scripts.start !== undefined ? "start" : null);
         if (fallbackKey && !pkg.scripts[fallbackKey].includes("--require")) {
-            pkg.scripts[fallbackKey] = "node --require " + baseDir + "instrumentation.js " + pkg.scripts[fallbackKey];
+            pkg.scripts[fallbackKey] = "node --require " + baseDir + "instrumentation.node.js " + pkg.scripts[fallbackKey];
         }
     }
 }
