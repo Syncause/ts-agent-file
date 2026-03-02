@@ -309,29 +309,49 @@ if (projectType === "next") {
         pkg.scripts.build = pkg.scripts.build.replace("next build", "next build --webpack");
     }
 } else if (projectType === "ts") {
-    if (pkg.scripts.dev && !pkg.scripts.dev.includes("--import")) {
-        const devCmd = pkg.scripts.dev;
-        // Try to intelligently insert --import flag
-        if (devCmd.startsWith("tsx ")) {
-            // For tsx commands: tsx ... -> tsx --import ./instrumentation.node.ts ...
-            pkg.scripts.dev = devCmd.replace(/^tsx\s+/, "tsx --import " + baseDir + "instrumentation.node.ts ");
-        } else if (devCmd.startsWith("node ")) {
-            // For node commands: node ... -> node --import ./instrumentation.node.ts ...
-            pkg.scripts.dev = devCmd.replace(/^node\s+/, "node --import " + baseDir + "instrumentation.node.ts ");
-        } else {
-            // Fallback: prepend tsx --import
-            pkg.scripts.dev = "tsx --import " + baseDir + "instrumentation.node.ts " + devCmd;
+    // Priority: dev > start > any script containing node/tsx runner
+    const tsScriptKeys = ["dev", "start", "serve", "run"];
+    let patched = false;
+    for (const key of tsScriptKeys) {
+        if (pkg.scripts[key] && !pkg.scripts[key].includes("--import")) {
+            const cmd = pkg.scripts[key];
+            if (cmd.startsWith("tsx ")) {
+                pkg.scripts[key] = cmd.replace(/^tsx\s+/, "tsx --import " + baseDir + "instrumentation.node.ts ");
+                patched = true; break;
+            } else if (cmd.startsWith("node ")) {
+                pkg.scripts[key] = cmd.replace(/^node\s+/, "node --import " + baseDir + "instrumentation.node.ts ");
+                patched = true; break;
+            } else if (cmd.startsWith("ts-node ")) {
+                pkg.scripts[key] = cmd.replace(/^ts-node\s+/, "ts-node --require " + baseDir + "instrumentation.node.ts ");
+                patched = true; break;
+            }
+        }
+    }
+    // Fallback: if no known runner found, prepend to dev (or start)
+    if (!patched) {
+        const fallbackKey = pkg.scripts.dev !== undefined ? "dev" : (pkg.scripts.start !== undefined ? "start" : null);
+        if (fallbackKey && !pkg.scripts[fallbackKey].includes("--import")) {
+            pkg.scripts[fallbackKey] = "tsx --import " + baseDir + "instrumentation.node.ts " + pkg.scripts[fallbackKey];
         }
     }
 } else if (projectType === "js") {
-    if (pkg.scripts.dev && !pkg.scripts.dev.includes("--require")) {
-        const devCmd = pkg.scripts.dev;
-        // For node commands: node ... -> node --require ./instrumentation.js ...
-        if (devCmd.startsWith("node ")) {
-            pkg.scripts.dev = devCmd.replace(/^node\s+/, "node --require " + baseDir + "instrumentation.js ");
-        } else {
-            // Fallback: prepend node --require
-            pkg.scripts.dev = "node --require " + baseDir + "instrumentation.js " + devCmd;
+    // Priority: dev > start > serve > run
+    const jsScriptKeys = ["dev", "start", "serve", "run"];
+    let patched = false;
+    for (const key of jsScriptKeys) {
+        if (pkg.scripts[key] && !pkg.scripts[key].includes("--require")) {
+            const cmd = pkg.scripts[key];
+            if (cmd.startsWith("node ")) {
+                pkg.scripts[key] = cmd.replace(/^node\s+/, "node --require " + baseDir + "instrumentation.js ");
+                patched = true; break;
+            }
+        }
+    }
+    // Fallback: if no known runner found, prepend to dev (or start)
+    if (!patched) {
+        const fallbackKey = pkg.scripts.dev !== undefined ? "dev" : (pkg.scripts.start !== undefined ? "start" : null);
+        if (fallbackKey && !pkg.scripts[fallbackKey].includes("--require")) {
+            pkg.scripts[fallbackKey] = "node --require " + baseDir + "instrumentation.js " + pkg.scripts[fallbackKey];
         }
     }
 }
