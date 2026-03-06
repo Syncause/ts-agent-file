@@ -68,16 +68,19 @@ module.exports = function probeLoader(source) {
     this.cacheable && this.cacheable();
 
     const resourcePath = this.resourcePath;
-    const relativePath = path.relative(process.cwd(), resourcePath);
+    const relativePath = path.relative(process.cwd(), resourcePath).replace(/\\/g, '/');
+
+    // Normalize path to use forward slashes for consistent matching across Windows/Linux
+    const normalizedPath = resourcePath.replace(/\\/g, '/');
 
     // Skip node_modules, probe-wrapper, instrumentation files
     // Also skip directories that commonly use Next.js async APIs (headers, cookies, auth)
     // which can break when wrapped due to async context issues
-    if (resourcePath.includes('node_modules') ||
-        resourcePath.includes('probe-wrapper') ||
-        resourcePath.includes('instrumentation') ||
-        resourcePath.includes('/actions/') ||     // Server Actions use async context
-        resourcePath.includes('/api/')) {         // API routes use server context
+    if (normalizedPath.includes('/node_modules/') ||
+        normalizedPath.includes('/probe-wrapper/') ||
+        normalizedPath.includes('/instrumentation/') ||
+        normalizedPath.includes('/actions/') ||     // Server Actions use async context
+        normalizedPath.includes('/api/')) {         // API routes use server context
         return source;
     }
 
