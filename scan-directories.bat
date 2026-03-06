@@ -1,9 +1,29 @@
 @echo off
-setlocal enabledelayedexpansion
+setlocal
 
-REM scan-directories.bat - Windows equivalent of scan-directories.sh
-REM Automatically scan project structure for webpack include paths
+REM ================================================
+REM scan-directories.bat (Windows)
+REM Scans project structure and outputs webpack include paths.
+REM Equivalent of scan-directories.sh
+REM ================================================
 
-node -e "const fs = require('fs'); const path = require('path'); const SKIP_DIRS = ['node_modules', '.next', '.git', 'public', 'styles', 'assets', 'static', 'dist', 'build', 'out', 'coverage', 'tests', '__tests__', '.vscode', '.idea', 'instrumentation', 'probe-wrapper', 'loaders', 'scripts', 'src']; const SOURCE_DIRS = ['app', 'pages', 'components', 'lib', 'utils', 'services', 'api', 'hooks', 'helpers', 'models', 'contexts', 'store', 'features', 'modules', 'views', 'controllers']; function shouldSkip(dirName) { const lowerName = dirName.toLowerCase(); if (dirName.startsWith('.') && dirName !== '.') return true; if (lowerName.includes('test') || lowerName.includes('spec')) return true; if (lowerName.includes('style') || lowerName.includes('css') || lowerName.includes('sass')) return true; return SKIP_DIRS.includes(lowerName); } function isSourceDir(dirName) { return SOURCE_DIRS.includes(dirName.toLowerCase()); } function containsSourceFiles(dirPath) { try { const files = fs.readdirSync(dirPath); return files.some(f => ['.ts', '.tsx', '.js', '.jsx'].includes(path.extname(f))); } catch (e) { return false; } } function scanDirectory(dir, maxDepth = 3, currentDepth = 0, baseDir = '') { if (currentDepth >= maxDepth) return []; let results = []; try { const entries = fs.readdirSync(dir, { withFileTypes: true }); for (const entry of entries) { if (!entry.isDirectory()) continue; const dirName = entry.name; if (shouldSkip(dirName)) continue; const fullPath = path.join(dir, dirName); const relativePath = baseDir ? path.join(baseDir, dirName) : dirName; let include = false; if (isSourceDir(dirName) || containsSourceFiles(fullPath)) { include = true; } if (include) { results.push(relativePath.replace(/\\/g, '/')); } results = results.concat(scanDirectory(fullPath, maxDepth, currentDepth + 1, relativePath)); } } catch (e) {} return results; } const projectRoot = process.cwd(); let allDirs = scanDirectory(projectRoot, 1); if (fs.existsSync(path.join(projectRoot, 'src'))) { allDirs = allDirs.concat(scanDirectory(path.join(projectRoot, 'src'), 3, 0, 'src')); } const sortedDirs = Array.from(new Set(allDirs)).sort(); if (sortedDirs.length === 0) { sortedDirs.push(fs.existsSync(path.join(projectRoot, 'src')) ? 'src/app' : 'app'); } process.stdout.write('include: ['); sortedDirs.forEach((dir, i) => { const escaped = dir.replace(/\//g, '\\\\/'); process.stdout.write((i === 0 ? '' : ', ') + '/' + escaped + '/'); }); process.stdout.write(']\n');"
+REM Delegate to Node.js for cross-platform compatibility
+node -e ^
+"const fs = require('fs');" ^
+"const path = require('path');" ^
+"const SKIP_DIRS = ['node_modules', '.next', '.git', 'public', 'styles', 'assets', 'static', 'dist', 'build', 'out', 'coverage', 'tests', '__tests__', '.vscode', '.idea', 'instrumentation', 'probe-wrapper', 'loaders', 'scripts', 'src'];" ^
+"const SOURCE_DIRS = ['app', 'pages', 'components', 'lib', 'utils', 'services', 'api', 'hooks', 'helpers', 'models', 'contexts', 'store', 'features', 'modules', 'views', 'controllers'];" ^
+"function shouldSkip(d) { const l=d.toLowerCase(); if(d.startsWith('.')&&d!=='.')return true; if(l.includes('test')||l.includes('spec'))return true; if(l.includes('style')||l.includes('css')||l.includes('sass'))return true; return SKIP_DIRS.includes(l); }" ^
+"function isSourceDir(d) { return SOURCE_DIRS.includes(d.toLowerCase()); }" ^
+"function containsSourceFiles(p) { try { return fs.readdirSync(p).some(f=>['.ts','.tsx','.js','.jsx'].includes(path.extname(f))); } catch(e){ return false; } }" ^
+"function scanDir(dir, maxD=3, curD=0, base='') { if(curD>=maxD)return []; let out=[]; try { const entries=fs.readdirSync(dir,{withFileTypes:true}); for(const e of entries) { if(!e.isDirectory())continue; const n=e.name; if(shouldSkip(n))continue; const fp=path.join(dir,n); const rel=base?path.join(base,n).replace(/\\\\/g,'/'):n; if(isSourceDir(n)||containsSourceFiles(fp))out.push(rel); out=out.concat(scanDir(fp,maxD,curD+1,rel)); } } catch(e){} return out; }" ^
+"const root=process.cwd();" ^
+"let dirs=scanDir(root,1);" ^
+"if(fs.existsSync(path.join(root,'src')))dirs=dirs.concat(scanDir(path.join(root,'src'),3,0,'src'));" ^
+"let sorted=Array.from(new Set(dirs)).sort();" ^
+"if(sorted.length===0)sorted.push(fs.existsSync(path.join(root,'src'))?'src/app':'app');" ^
+"process.stdout.write('include: [');" ^
+"sorted.forEach((d,i)=>{const e=d.replace(/\//g,'\\\\/');;process.stdout.write((i===0?'':', ')+'/'+e+'/');});" ^
+"process.stdout.write(']\\n');"
 
 endlocal
