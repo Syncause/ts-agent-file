@@ -180,14 +180,14 @@ switch ($PROJECT_TYPE) {
 }
 
 # --- 5. Install Dependencies ---
-function Run-Cmd([string]$cmd, [string[]]$args) {
+function Run-Cmd([string]$cmd, [string[]]$cmdArgs) {
     if ($DryRun) {
-        Write-Host "  [DRY-RUN] Would run: $cmd $($args -join ' ')" -ForegroundColor DarkGray
+        Write-Host "  [DRY-RUN] Would run: $cmd $($cmdArgs -join ' ')" -ForegroundColor DarkGray
         return
     }
-    & $cmd @args
+    & $cmd @cmdArgs
     if ($LASTEXITCODE -ne 0) {
-        Write-Err "Command failed: $cmd $($args -join ' ')"
+        Write-Err "Command failed: $cmd $($cmdArgs -join ' ')"
         exit $LASTEXITCODE
     }
 }
