@@ -5,52 +5,33 @@ When tasked with installing the TS/JS Probe into a project, follow this prioriti
 ## 1. Automated Installation
 
 > [!IMPORTANT]
-> You **MUST** run the installer script to download probe files from GitHub. **DO NOT** create `probe-loader.js` manually - it contains critical logic for handling "use client" and "use server" directives that must be downloaded from the official repository.
+> You **MUST** run the installer script to download probe files from GitHub. Do not handcraft probe files.
 
 Identify the project type (Next.js, TypeScript, or JavaScript) and run the installer directly from GitHub:
 ```bash
 curl -sL https://raw.githubusercontent.com/Syncause/ts-agent-file/v1.6.0/install_probe.sh | bash
 ```
-*Note: For Next.js projects, the script downloads `instrumentation.node.next.ts` from GitHub (default `v1.2.1`) and renames it to `instrumentation.node.ts`.*
+*Note: For Next.js projects, the script downloads `instrumentation.node.next.ts` from GitHub and renames it to `instrumentation.node.ts`.*
 
 ## 2. Next.js Specific Configuration (CRITICAL)
 If the project is **Next.js**, the script downloads the files but you **MUST** manually update `next.config.ts` (or `.js`) and `src/instrumentation.ts`.
 
 ### Step 2.1: Update `next.config.ts`
-Replace or update your configuration with the following structure. It ensures the probe loader only runs on server-side code and correctly handles OpenTelemetry and gRPC dependencies.
+Keep Next.js on SWC. Do **NOT** add a project-level `.babelrc` for probe installation, or `next/font` will fail to compile. Add external packages only:
 
 ```typescript
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  // 1. Essential external packages for OpenTelemetry & gRPC
   serverExternalPackages: [
     '@opentelemetry/sdk-node',
     '@opentelemetry/auto-instrumentations-node',
     '@opentelemetry/api',
-    '@opentelemetry/instrumentation',
-    '@opentelemetry/exporter-logs-otlp-grpc',
-    '@opentelemetry/exporter-metrics-otlp-grpc',
-    '@grpc/grpc-js',
-    '@grpc/proto-loader',
     'express',
     'ws',
     'bufferutil',
     'utf-8-validate',
   ],
-  // 2. Webpack loader for automatic function wrapping
-  webpack: (config, { isServer }) => {
-    if (isServer) {
-      config.module.rules.push({
-        test: /\.(ts|tsx|js|jsx)$/,
-        include: [/src\/app/, /src\/pages/, /src\/services/, /src\/lib/], // Adjust based on project structure
-        exclude: [/node_modules/, /\.next/, /instrumentation/, /probe-wrapper/],
-        use: [{ loader: './loaders/probe-loader.js' }],
-      });
-      console.log('[next.config] probe-loader enabled for server-side');
-    }
-    return config;
-  },
 };
 
 export default nextConfig;
@@ -68,7 +49,16 @@ export async function register() {
 }
 ```
 
-### Step 2.3: Generate Installation Patch
+### Step 2.3: WebSocket compatibility fix
+If startup logs show `TypeError: bufferUtil.mask is not a function`, ensure `instrumentation.node.ts` uses this pattern before loading `ws`:
+
+```typescript
+process.env.WS_NO_BUFFER_UTIL ??= '1';
+const WsModule = require('ws') as typeof import('ws');
+const WebSocket = (WsModule.WebSocket ?? WsModule) as typeof import('ws').WebSocket;
+```
+
+### Step 2.4: Generate Installation Patch
 After completing the installation and configuration, you must generate a clean patch of all changes made to the project and save it in the `.syncause/installation.patch` file. 
 
 **IMPORTANT**: 
@@ -81,7 +71,7 @@ After completing the installation and configuration, you must generate a clean p
 Verify the installation was successful:
 - **Environment**: Try running `npm run dev`.
 - **Logs**: Look for:
-    - `[next.config] probe-loader enabled`
+    - No `next/font requires SWC although Babel is being used` errors
     - `[DEBUG] OpenTelemetry SDK started`
     - `[DEBUG] Connected to proxy server` (if logs are enabled)
 - **API Check**: Run `curl http://localhost:43210/remote-debug/spans/stats`. It should return JSON data with `totalSpans > 0` after visiting the app.

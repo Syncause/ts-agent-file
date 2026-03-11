@@ -8,8 +8,13 @@ import * as Module from 'module';
 import * as path from 'path';
 import * as fs from 'fs';
 import { inspect } from 'util';
-import WebSocket from 'ws';
 import express, { Request, Response } from 'express';
+
+// Force ws to use the pure JS path. Some bundlers partially shim optional
+// native bufferutil, which breaks sends with `bufferUtil.mask is not a function`.
+process.env.WS_NO_BUFFER_UTIL ??= '1';
+const WsModule = require('ws') as typeof import('ws');
+const WebSocket = (WsModule.WebSocket ?? WsModule) as typeof import('ws').WebSocket;
 
 // Hardcoded API_KEY
 const API_KEY = 'your_api_key';
@@ -725,7 +730,7 @@ if (!isDevelopment) {
     debugLog.log('[DEBUG] Console interception skipped in development mode');
 }
 
-let wsConnection: WebSocket | null = null;
+let wsConnection: InstanceType<typeof WebSocket> | null = null;
 let instrumentationConnected = false;
 let heartbeatInterval: NodeJS.Timeout | null = null;
 

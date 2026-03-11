@@ -42,7 +42,7 @@ $CORE_DEPS = @(
     "ws"
 )
 $TS_DEPS   = @("@types/express", "@types/ws", "@types/node", "tsx")
-$NEXT_DEPS = @("@babel/parser", "@babel/traverse", "magic-string")
+$NEXT_DEPS = @()
 
 $EXTERNAL_PACKAGES = @(
     "ws", "bufferutil", "utf-8-validate",
@@ -160,12 +160,10 @@ function Download-File([string]$url, [string]$dest) {
 
 switch ($PROJECT_TYPE) {
     "next" {
-        Write-Step "Downloading Next.js instrumentation files and Babel config..."
+        Write-Step "Downloading Next.js instrumentation files..."
         Download-File "$GITHUB_BASE/instrumentation.ts"            "$TARGET_DIR/instrumentation.ts"
         Download-File "$GITHUB_BASE/instrumentation.node.next.ts"  "$TARGET_DIR/instrumentation.node.ts"
         Download-File "$GITHUB_BASE/probe-wrapper.ts"              "$TARGET_DIR/probe-wrapper.ts"
-        Download-File "$GITHUB_BASE/.babelrc"                      ".babelrc"
-        Download-File "$GITHUB_BASE/babel-plugin-probe.js"         "babel-plugin-probe.js"
     }
     "ts" {
         Write-Step "Downloading TypeScript instrumentation files..."
@@ -208,10 +206,12 @@ if ($PROJECT_TYPE -eq "ts" -or $PROJECT_TYPE -eq "next") {
 
 if ($PROJECT_TYPE -eq "next") {
     Write-Step "Installing Next.js specific dependencies..."
-    $devParts = $DEV_INSTALL_CMD -split " ", 2
-    $devBin   = $devParts[0]
-    $devArgs  = if ($devParts.Count -gt 1) { ($devParts[1] -split " ") + $NEXT_DEPS } else { $NEXT_DEPS }
-    Run-Cmd $devBin $devArgs
+    if ($NEXT_DEPS.Count -gt 0) {
+        $devParts = $DEV_INSTALL_CMD -split " ", 2
+        $devBin   = $devParts[0]
+        $devArgs  = if ($devParts.Count -gt 1) { ($devParts[1] -split " ") + $NEXT_DEPS } else { $NEXT_DEPS }
+        Run-Cmd $devBin $devArgs
+    }
 }
 
 # --- 6. Configure tsconfig.json (TypeScript projects only) ---

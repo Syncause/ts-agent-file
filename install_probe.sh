@@ -42,9 +42,6 @@ TS_DEPS=(
     "tsx"
 )
 NEXT_DEPS=(
-    "@babel/parser"
-    "@babel/traverse"
-    "magic-string"
 )
 
 # 1. Detect Package Manager
@@ -140,13 +137,10 @@ echo_step "Target directory for probe files: $TARGET_DIR"
 
 case $PROJECT_TYPE in
     "next")
-        echo_step "Downloading Next.js instrumentation files and Babel config..."
+        echo_step "Downloading Next.js instrumentation files..."
         curl -sL "$GITHUB_BASE/instrumentation.ts" -o "$TARGET_DIR/instrumentation.ts"
         curl -sL "$GITHUB_BASE/instrumentation.node.next.ts" -o "$TARGET_DIR/instrumentation.node.ts"
         curl -sL "$GITHUB_BASE/probe-wrapper.ts" -o "$TARGET_DIR/probe-wrapper.ts"
-        # Download Babel config to root
-        curl -sL "$GITHUB_BASE/.babelrc" -o ".babelrc"
-        curl -sL "$GITHUB_BASE/babel-plugin-probe.js" -o "babel-plugin-probe.js"
         ;;
     "ts")
         echo_step "Downloading TypeScript instrumentation files..."
@@ -171,10 +165,12 @@ fi
 
 if [ "$PROJECT_TYPE" == "next" ]; then
     echo_step "Installing Next.js specific dependencies..."
-    $DEV_INSTALL_CMD "${NEXT_DEPS[@]}"
+    if [ "${#NEXT_DEPS[@]}" -gt 0 ]; then
+        $DEV_INSTALL_CMD "${NEXT_DEPS[@]}"
+    fi
 fi
 
-# 5. Configure tsconfig.json for @/probe-wrapper path alias (TypeScript projects only - Next.js uses Babel/Relative)
+# 5. Configure tsconfig.json for @/probe-wrapper path alias (TypeScript projects only)
 if [ "$PROJECT_TYPE" == "ts" ]; then
     echo_step "Configuring tsconfig.json with @/probe-wrapper path alias..."
     
