@@ -25,21 +25,19 @@ echo ERROR: PowerShell not found. Please install PowerShell from https://aka.ms/
 exit /b 1
 
 :run
-REM --- Download install_probe.ps1 if not already present ---
+REM --- Always download install_probe.ps1 for the requested tag ---
 set "TAG=%~1"
 if "%TAG%"=="" set "TAG=v1.6.0"
 set "PS1_URL=https://raw.githubusercontent.com/Syncause/ts-agent-file/%TAG%/install_probe.ps1"
 set "PS1_FILE=%~dp0install_probe.ps1"
 
-if not exist "%PS1_FILE%" (
-    echo [34m==^>[0m Downloading install_probe.ps1 from GitHub (tag: %TAG%)...
-    %PS_EXE% -NoProfile -ExecutionPolicy Bypass -Command ^
-        "Invoke-WebRequest -Uri '%PS1_URL%' -OutFile '%PS1_FILE%' -UseBasicParsing"
-    if %errorlevel% neq 0 (
-        echo [31mERROR:[0m Failed to download install_probe.ps1.
-        echo Please check your network connection and that the version tag '%TAG%' exists.
-        exit /b 1
-    )
+echo [34m==^>[0m Downloading install_probe.ps1 from GitHub (tag: %TAG%)...
+%PS_EXE% -NoProfile -ExecutionPolicy Bypass -Command ^
+    "Invoke-WebRequest -Uri '%PS1_URL%' -OutFile '%PS1_FILE%' -UseBasicParsing"
+if %errorlevel% neq 0 (
+    echo [31mERROR:[0m Failed to download install_probe.ps1.
+    echo Please check your network connection and that the version tag '%TAG%' exists.
+    exit /b 1
 )
 
 REM --- Run the PowerShell installer ---
