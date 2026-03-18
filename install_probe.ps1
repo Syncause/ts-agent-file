@@ -1,6 +1,6 @@
 # install_probe.ps1
 # This script automates the installation of the OpenTelemetry-based TS/JS Probe.
-# PowerShell equivalent of install_probe.sh — supports Windows, Mac, and Linux via pwsh.
+# PowerShell equivalent of install_probe.sh - supports Windows, Mac, and Linux via pwsh.
 # Usage:
 #   .\install_probe.ps1 [version_tag] [--dry-run]
 #   pwsh -ExecutionPolicy Bypass -File install_probe.ps1 [version_tag] [--dry-run]
@@ -28,7 +28,7 @@ function Write-Warn([string]$msg) {
 if (-not $Tag) { $Tag = "v1.6.0" }
 $GITHUB_BASE = "https://raw.githubusercontent.com/Syncause/ts-agent-file/$Tag"
 Write-Step "Using version tag: $Tag"
-if ($DryRun) { Write-Warn "DRY-RUN MODE — no files will be downloaded or modified." }
+if ($DryRun) { Write-Warn "DRY-RUN MODE - no files will be downloaded or modified." }
 
 $CORE_DEPS = @(
     "@opentelemetry/sdk-node",
@@ -254,7 +254,7 @@ if ($PROJECT_TYPE -eq "next") {
         Write-Host "  [DRY-RUN] Would inject serverExternalPackages into next.config.ts/js" -ForegroundColor DarkGray
         Write-Host "  Packages: $pkgsInline" -ForegroundColor DarkGray
     } else {
-        # Node.js inline — handles all config file variants (ts/js/mjs)
+        # Node.js inline - handles all config file variants (ts/js/mjs)
         $nodeScript = @"
 const fs = require('fs');
 const externalPackages = $pkgsInline;
