@@ -649,6 +649,58 @@ function wrapRequireCache(): void {
     debugLog.log(`[DEBUG] wrapRequireCache: Wrapped ${wrappedCount} modules`);
 }
 
+let commonJsRequireHookInstalled = false;
+
+function shouldEnableCommonJsRequireHook(): boolean {
+    const value = String(process.env.SYNCAUSE_ENABLE_CJS_REQUIRE_HOOK || '').trim().toLowerCase();
+    if (value) {
+        return !['0', 'false', 'no', 'off'].includes(value);
+    }
+    return false;
+}
+
+function installCommonJsRequireHook(): void {
+    if (commonJsRequireHookInstalled) {
+        debugLog.log('[DEBUG] CommonJS require hook already installed');
+        return;
+    }
+    commonJsRequireHookInstalled = true;
+
+    const proto = (Module as any).Module?.prototype || (Module as any).prototype;
+    if (!proto || typeof proto.require !== 'function') {
+        debugLog.warn('[DEBUG] CommonJS require hook unavailable: Module.prototype.require not found');
+        return;
+    }
+
+    const originalRequire = proto.require;
+    proto.require = function syncauseTracedRequire(request: string) {
+        const exported = originalRequire.apply(this, arguments as any);
+        let resolvedPath = '';
+        try {
+            resolvedPath = (Module as any)._resolveFilename(request, this);
+        } catch (err) {
+            return exported;
+        }
+        try {
+            if (!shouldWrap(resolvedPath)) {
+                return exported;
+            }
+            const wrapped = wrapExports(exported, resolvedPath);
+            const cacheEntry = (Module as any)._cache?.[resolvedPath];
+            if (cacheEntry && cacheEntry.exports !== wrapped) {
+                cacheEntry.exports = wrapped;
+            }
+            return wrapped;
+        } catch (err) {
+            debugLog.warn(`[DEBUG] CommonJS require hook failed for ${resolvedPath}:`, err);
+            return exported;
+        }
+    };
+
+    wrapRequireCache();
+    debugLog.log('[DEBUG] CommonJS require hook installed for direct Node runtime tracing');
+}
+
 // Intercept console.log and other console methods
 // Only in production to avoid HMR conflicts in development
 const isInstrumenting = Symbol('is_instrumenting');
@@ -1111,15 +1163,15 @@ export function init() {
     // Start instrumentation HTTP server
     startInstrumentationServer();
 
-    // NOTE: wrapRequireCache() and Module.prototype.require hook are disabled
-    // because they cause:
-    // - HMR loop in development (Webpack conflict)
-    // - TypeError: b.C is not a function in production (minification conflict)
-    // 
-    // Use the Webpack Loader (probe-loader.js) for function wrapping instead.
-    // The Loader only runs in production builds (configured in next.config.ts).
+    // Direct `node script.js` lanes do not pass through the Webpack loader, so
+    // enable CommonJS export wrapping only when the orchestrator explicitly opts in.
+    if (shouldEnableCommonJsRequireHook()) {
+        installCommonJsRequireHook();
+    } else {
+        debugLog.log('[DEBUG] CommonJS require hook disabled; set SYNCAUSE_ENABLE_CJS_REQUIRE_HOOK=1 for direct Node tracing');
+    }
 
-    debugLog.log('[DEBUG] Instrumentation initialized (Loader-based wrapping in production)');
+    debugLog.log('[DEBUG] Instrumentation initialized');
 }
 
 // Auto initialize: automatically start when file is loaded via --require or --import

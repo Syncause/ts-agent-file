@@ -92,8 +92,8 @@ function __probe_wrap(fn, name, location) {
             const result = fn.apply(this, args);
             
             if (isPromiseLike(result)) {
-                return result
-                    .then((val) => {
+                return Promise.resolve(result).then(
+                    (val) => {
                         const endTime = Date.now();
                         callStack.pop();
                         recordSpan(entry, endTime, 'ok', val);
@@ -102,8 +102,8 @@ function __probe_wrap(fn, name, location) {
                             currentTraceId = null;
                         }
                         return val;
-                    })
-                    .catch((err) => {
+                    },
+                    (err) => {
                         const endTime = Date.now();
                         callStack.pop();
                         recordSpan(entry, endTime, 'error', undefined, String(err?.message || err));
@@ -112,7 +112,8 @@ function __probe_wrap(fn, name, location) {
                             currentTraceId = null;
                         }
                         throw err;
-                    });
+                    }
+                );
             }
             
             const endTime = Date.now();
